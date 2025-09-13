@@ -1,0 +1,5 @@
+node_modules/
+.vs
+.idea
+g3000-acars/Packages
+g3000-acars/_PackageInt

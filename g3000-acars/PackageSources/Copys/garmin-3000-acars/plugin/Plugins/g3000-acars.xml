@@ -1,0 +1,10 @@
+<Plugins>
+  <Plugin target="WTG3000_GTC">
+    coui://html_ui/garmin-3000-acars/plugin.js
+  </Plugin>
+
+  <Plugin target="WTG3000v2_GTC">
+    coui://html_ui/garmin-3000-acars/plugin.js
+  </Plugin>
+
+</Plugins>

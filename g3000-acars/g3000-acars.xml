@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Version="2" Name="g3000-acars" FolderName="Packages" MetadataFolderName="PackagesMetadata">
+	<OutputDirectory>.</OutputDirectory>
+	<TemporaryOutputDirectory>_PackageInt</TemporaryOutputDirectory>
+	<Packages>
+		<Package>PackageDefinitions\liz3-garmin-3000-acars.xml</Package>
+	</Packages>
+	<PublishingGroups/>
+</Project>
+
