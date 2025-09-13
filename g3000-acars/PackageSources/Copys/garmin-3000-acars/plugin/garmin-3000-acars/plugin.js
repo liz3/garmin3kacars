@@ -680,6 +680,11 @@
         );
       }
     }
+    destroy() {
+      const value = this.messageListRef.getOrDefault();
+      if (value) value.destroy();
+      super.destroy();
+    }
     onAfterRender(thisNode) {
       this.thisNode = thisNode;
       this._title.set("CPDLC Thread");
@@ -744,11 +749,17 @@
       this.valid = import_msfs_sdk.Subject.create(false);
     }
     destroy() {
+      let value = this.listRef.getOrDefault();
+      if (value) value.destroy();
+      value = this.itemListRef.getOrDefault();
+      if (value) value.destroy();
       this.clearOld();
+      super.destroy();
     }
     onPause() {
     }
     onAfterRender() {
+      this._title.set("Select Message");
     }
     renderItem(e, i) {
       return /* @__PURE__ */ msfssdk.FSComponent.buildComponent(import_msfs_wtg3000_gtc.GtcListItem, null, e.options ? /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
@@ -923,6 +934,11 @@
         this.props.settingsManager.getSetting("acars_code").get()
       );
     }
+    destroy() {
+      const value = this.listRef.getOrDefault();
+      if (value) value.destroy();
+      super.destroy();
+    }
     render() {
       const sidebarState = import_msfs_sdk.Subject.create(null);
       return /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
@@ -971,6 +987,14 @@
       super(props);
       this.listRef = import_msfs_sdk.FSComponent.createRef();
       this.listItemHeight = this.props.gtcService.orientation === "horizontal" ? 130 : 70;
+    }
+    destroy() {
+      const value = this.listRef.getOrDefault();
+      if (value) value.destroy();
+      super.destroy();
+    }
+    onAfterRender() {
+      this._title.set("Select Message");
     }
     render() {
       const sidebarState = import_msfs_sdk.Subject.create(null);
@@ -1342,12 +1366,7 @@
         true,
         false
       );
-      this.bus.getPublisher().pub(
-        "aural_alert_trigger",
-        "acars-msg-sound",
-        true,
-        false
-      );
+      this.bus.getPublisher().pub("aural_alert_trigger", "acars-msg-sound", true, false);
     }
     onGtcInteractionEvent(event) {
       switch (event) {

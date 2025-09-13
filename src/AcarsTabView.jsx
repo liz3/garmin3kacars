@@ -407,7 +407,6 @@ class AcarsMessagePage extends GtcView {
       message.state.set("Viewed");
     }
     if (!message.viewed) {
-
       message.viewed = true;
       this.bus.getPublisher().pub(
         "cas_deactivate_alert",
@@ -419,6 +418,11 @@ class AcarsMessagePage extends GtcView {
         false,
       );
     }
+  }
+  destroy() {
+    const value = this.messageListRef.getOrDefault();
+    if (value) value.destroy();
+    super.destroy();
   }
   onAfterRender(thisNode) {
     this.thisNode = thisNode;
@@ -498,10 +502,17 @@ class AcarsSendTemplate extends GtcView {
     this.valid = Subject.create(false);
   }
   destroy() {
+    let value = this.listRef.getOrDefault();
+    if (value) value.destroy();
+    value = this.itemListRef.getOrDefault();
+    if (value) value.destroy();
     this.clearOld();
+    super.destroy();
   }
   onPause() {}
-  onAfterRender() {}
+  onAfterRender() {
+     this._title.set("Select Message");
+  }
   renderItem(e, i) {
     return (
       <GtcListItem>
@@ -700,6 +711,11 @@ class AcarsSettingsPopUp extends GtcView {
       this.props.settingsManager.getSetting("acars_code").get(),
     );
   }
+  destroy() {
+    const value = this.listRef.getOrDefault();
+    if (value) value.destroy();
+    super.destroy();
+  }
   render() {
     const sidebarState = Subject.create(null);
     return (
@@ -754,6 +770,14 @@ class AcarsMessageSendList extends GtcView {
     this.listRef = FSComponent.createRef();
     this.listItemHeight =
       this.props.gtcService.orientation === "horizontal" ? 130 : 70;
+  }
+  destroy() {
+    const value = this.listRef.getOrDefault();
+    if (value) value.destroy();
+    super.destroy();
+  }
+  onAfterRender(){
+    this._title.set("Select Message");
   }
   render() {
     const sidebarState = Subject.create(null);
@@ -1133,12 +1157,9 @@ class AcarsTabView extends GtcView {
       true,
       false,
     );
-    this.bus.getPublisher().pub(
-      "aural_alert_trigger",
-      "acars-msg-sound",
-      true,
-      false,
-    );
+    this.bus
+      .getPublisher()
+      .pub("aural_alert_trigger", "acars-msg-sound", true, false);
   }
   onGtcInteractionEvent(event) {
     switch (event) {
