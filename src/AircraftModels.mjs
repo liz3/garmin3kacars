@@ -1,7 +1,8 @@
 const models = {
   "Asobo Cessna Citation Longitude": "C700",
   "Microsoft Vision Jet": "SF50",
-  "Asobo TBM 930": "TMB9"
+  "Asobo TBM 930": "TMB9",
+  "Citation CJ3+": "C25B",
 }
 
 const getAircraftIcao = () => {

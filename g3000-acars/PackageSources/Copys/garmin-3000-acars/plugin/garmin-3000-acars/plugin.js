@@ -139,6 +139,7 @@
               if (message2.from === state.callsign && message2.type === "inforeq") {
                 continue;
               }
+              message2._id = state.idc++;
               messageStateUpdate(state, message2);
               if (message2.type === "cpdlc" && message2.cpdlc.ra) {
                 message2.response = async (code) => {
@@ -150,13 +151,14 @@
                   sendAcarsMessage(
                     state,
                     message2.from,
-                    `/data2/${state._min_count}/${message2.cpdlc.mrn}/${code === "STANDBY" ? "NE" : "N"}/${code}`,
+                    `/data2/${state._min_count}/${message2.cpdlc.min}/${code === "STANDBY" ? "NE" : "N"}/${code}`,
                     "cpdlc"
                   );
                 };
                 message2.options = responseOptions(message2.cpdlc.ra);
                 message2.respondSend = null;
               }
+              state.message_stack[message2._id] = message2;
               state._callback(message2);
             }
             poll(state);
@@ -192,7 +194,9 @@
       active_station: null,
       pending_station: null,
       _min_count: 0,
-      aircraft: aicraftType
+      aircraft: aicraftType,
+      idc: 0,
+      message_stack: {}
     };
     state.dispose = () => {
       if (state._interval) clearInterval(state._interval);
@@ -328,7 +332,8 @@
   var models = {
     "Asobo Cessna Citation Longitude": "C700",
     "Microsoft Vision Jet": "SF50",
-    "Asobo TBM 930": "TMB9"
+    "Asobo TBM 930": "TMB9",
+    "Citation CJ3+": "C25B"
   };
   var getAircraftIcao = () => {
     const v = SimVar.GetSimVarValue("TITLE", "string");
@@ -447,6 +452,8 @@
       this.props.gtcService.bus.getSubscriber().on("acars_message").handle((message2) => {
         const client = this.props.client.get();
         if (!client) return;
+        if (this.props.gtcService.gtcThisSide === "right")
+          messageStateUpdate(client, message2);
         this.conBtnState.set(client.active_station ? "Logoff" : "Logon");
         this.station.set(client.active_station || "----");
         this.nextStation.set(client.pending_station || "----");
@@ -499,8 +506,8 @@
           type: import_msfs_wtg3000_gtc.GtcViewKeys.DurationDialog1
         }
       ];
-      this.idSub = this.flightId.sub((v) => {
-        this.props.gtcService.bus.getPublisher().pub("acars_flight_id", v);
+      this.props.gtcService.bus.getSubscriber().on("acars_status_param").handle((e) => {
+        this.itemList.find((x) => x.label === e.label).source.set(e.value);
       });
     }
     onResume() {
@@ -517,8 +524,20 @@
     stateBtnPressed() {
       const client = this.props.client.get();
       if (!client) return;
-      if (!client.active_station) client.sendLogonRequest(this.facility.get());
-      else client.sendLogoffRequest();
+      if (window.acarsSide === "primary") {
+        if (!client.active_station) client.sendLogonRequest(this.facility.get());
+        else client.sendLogoffRequest();
+      } else {
+        props.gtcService.bus.getPublisher().pub(
+          "acars_message_request",
+          {
+            key: !client.active_station ? "sendLogonRequest" : sendLogoffRequest,
+            arguments: [this.facility.get()]
+          },
+          true,
+          false
+        );
+      }
     }
     render() {
       const sidebarState = import_msfs_sdk.Subject.create(null);
@@ -549,7 +568,12 @@
               if (result.wasCancelled) {
                 return;
               }
-              e.source.set(result.payload);
+              this.props.gtcService.bus.getPublisher().pub(
+                "acars_status_param",
+                { label: e.label, value: result.payload },
+                true,
+                false
+              );
             },
             isInList: true
           }
@@ -591,6 +615,22 @@
       this.listRef = import_msfs_sdk.FSComponent.createRef();
       this.messages = import_msfs_sdk.ArraySubject.create();
       this.listItemHeight = this.props.gtcService.orientation === "horizontal" ? 300 : 220;
+      if (window.acarsSide === "primary") {
+        this.props.gtcService.bus.getSubscriber().on("acars_message_state_request").handle((e) => {
+          this.props.gtcService.bus.getPublisher().pub(
+            "acars_state_message_response",
+            { messages: this.messages.getArray() },
+            true,
+            false
+          );
+        });
+      } else {
+        const sub = this.props.gtcService.bus.getSubscriber().on("acars_state_message_response").handle((e) => {
+          for (const entry of e.messages) this.messages.insert(entry);
+          sub.destroy();
+        });
+        this.props.gtcService.bus.getPublisher().pub("acars_message_state_request", null, true, false);
+      }
       this.props.gtcService.bus.getSubscriber().on("acars_message").handle((e) => {
         e.state = import_msfs_sdk.Subject.create(
           e.type === "send" ? "Send" : e.options && !e.respondSend ? "Need Response" : "Incoming"
@@ -598,6 +638,10 @@
         if (e.from === "acars") e.from = "";
         e.viewed = false;
         this.messages.insert(e, 0);
+      });
+      this.props.gtcService.bus.getSubscriber().on("acars_message_read_state").handle((e) => {
+        const message2 = this.messages.getArray().find((msg) => e.id === msg._id);
+        if (message2) message2.state.set(e.state);
       });
     }
     onResume() {
@@ -645,8 +689,8 @@
     }
   };
   var AcarsMessagePage = class extends import_msfs_wtg3000_gtc.GtcView {
-    constructor(props) {
-      super(props);
+    constructor(props2) {
+      super(props2);
       this.message = import_msfs_sdk.Subject.create(null);
       this.canReply = import_msfs_sdk.Subject.create(true);
       this.messageListRef = import_msfs_sdk.FSComponent.createRef();
@@ -665,7 +709,15 @@
         const arr = [this.option1, this.option2, this.option3];
         message2.options.forEach((v, i) => arr[i].set(v));
       } else {
-        message2.state.set("Viewed");
+        this.bus.getPublisher().pub(
+          "acars_message_read_state",
+          {
+            id: message2._id,
+            state: "Viewed"
+          },
+          true,
+          false
+        );
       }
       if (!message2.viewed) {
         message2.viewed = true;
@@ -704,8 +756,26 @@
               rejectButtonLabel: "Cancel"
             });
             if (!result.wasCancelled && result.payload === true) {
-              message2.state.set(`Closed`);
-              message2.response(e);
+              if (window.acarsSide === "primary") message2.response(e);
+              else
+                this.props.gtcService.bus.getPublisher().pub(
+                  "acars_message_ack",
+                  {
+                    e,
+                    id: message2._id
+                  },
+                  true,
+                  false
+                );
+              this.bus.getPublisher().pub(
+                "acars_message_read_state",
+                {
+                  id: message2._id,
+                  state: "Closed"
+                },
+                true,
+                false
+              );
               this.message.set(message2);
               this.canReply.set(false);
               const arr = [this.option1, this.option2, this.option3];
@@ -736,8 +806,8 @@
     }
   };
   var AcarsSendTemplate = class extends import_msfs_wtg3000_gtc.GtcView {
-    constructor(props) {
-      super(props);
+    constructor(props2) {
+      super(props2);
       this.listRef = import_msfs_sdk.FSComponent.createRef();
       this.itemListRef = import_msfs_sdk.FSComponent.createRef();
       this.buttonText = import_msfs_sdk.Subject.create("Send");
@@ -926,8 +996,8 @@
     }
   };
   var AcarsSettingsPopUp = class extends import_msfs_wtg3000_gtc.GtcView {
-    constructor(props) {
-      super(props);
+    constructor(props2) {
+      super(props2);
       this.listRef = import_msfs_sdk.FSComponent.createRef();
       this.listItemHeight = this.props.gtcService.orientation === "horizontal" ? 130 : 70;
       this.hoppieValue = import_msfs_sdk.Subject.create(
@@ -983,8 +1053,8 @@
     }
   };
   var AcarsMessageSendList = class extends import_msfs_wtg3000_gtc.GtcView {
-    constructor(props) {
-      super(props);
+    constructor(props2) {
+      super(props2);
       this.listRef = import_msfs_sdk.FSComponent.createRef();
       this.listItemHeight = this.props.gtcService.orientation === "horizontal" ? 130 : 70;
     }
@@ -1024,8 +1094,8 @@
     }
   };
   var AcarsTabView = class extends import_msfs_wtg3000_gtc.GtcView {
-    constructor(props) {
-      super(props);
+    constructor(props2) {
+      super(props2);
       this.tabsRef = import_msfs_sdk.FSComponent.createRef();
       this.settingsManager = new import_msfs_sdk.DefaultUserSettingManager(this.bus, [
         {
@@ -1033,35 +1103,140 @@
           name: "acars_code"
         }
       ]);
+      const isPrimary = window.acarsSide !== "secondary";
       this.canCreate = import_msfs_sdk.Subject.create(false);
       this.client = import_msfs_sdk.Subject.create(null);
+      if (isPrimary) {
+        window.acarsSide = "primary";
+        this.props.gtcService.bus.getPublisher().pub("acars_instance_create", {}, true, false);
+      }
       this.latestMessage = import_msfs_sdk.Subject.create(null);
-      props.gtcService.bus.getSubscriber().on("acars_flight_id").handle((v) => {
-        const oldClient = this.client.get();
-        if (oldClient) {
-          oldClient.dispose();
-        }
-        const hoppieCode = this.settingsManager.getSetting("acars_code").get();
-        if (v && v.length && hoppieCode) {
-          const client = createClient(
-            hoppieCode,
-            v,
-            AircraftModels_default(),
-            this.onMessage.bind(this)
+      if (isPrimary) {
+        this.props.gtcService.bus.getSubscriber().on("acars_state_request").handle((e) => {
+          this.props.gtcService.bus.getPublisher().pub(
+            "acars_state_response",
+            { client: this.client.get() },
+            true,
+            false
           );
+        });
+      } else {
+        const sub = this.props.gtcService.bus.getSubscriber().on("acars_state_response").handle((e) => {
+          if (e.client) {
+            this.props.gtcService.bus.getPublisher().pub("acars_status_param", {
+              label: "Flight ID",
+              value: e.client.callsign
+            });
+            props2.gtcService.bus.getPublisher().pub("acars_new_client", {
+              callsign: e.client.callsign
+            });
+          }
+          sub.destroy();
+        });
+        this.props.gtcService.bus.getPublisher().pub("acars_state_request", null, true, false);
+      }
+      if (isPrimary) {
+        props2.gtcService.bus.getSubscriber().on("acars_message_ack").handle((v) => {
+          const state = this.client.get();
+          const message2 = state.message_stack[v.id];
+          if (message2) {
+            message2.response(v.e);
+            message2.status.set("Closed");
+          }
+        });
+        props2.gtcService.bus.getSubscriber().on("acars_message_request").handle((v) => {
+          const state = this.client.get();
+          state[v.key].apply(this, Object.values(v.arguments || {}));
+        });
+        props2.gtcService.bus.getSubscriber().on("acars_status_param").handle((imp) => {
+          if (imp.label !== "Flight ID") return;
+          const v = imp.value;
+          const oldClient = this.client.get();
+          if (oldClient) {
+            oldClient.dispose();
+          }
+          const hoppieCode = this.settingsManager.getSetting("acars_code").get();
+          if (v && v.length && hoppieCode) {
+            const client = createClient(
+              hoppieCode,
+              v,
+              AircraftModels_default(),
+              this.onMessage.bind(this)
+            );
+            this.client.set(client);
+            props2.gtcService.bus.getPublisher().pub(
+              "acars_new_client",
+              {
+                callsign: client.callsign
+              },
+              true,
+              false
+            );
+            this.canCreate.set(true);
+          } else {
+            this.canCreate.set(false);
+            this.client.set(null);
+            props2.gtcService.bus.getPublisher().pub("acars_new_client", null, true, false);
+          }
+        });
+      } else {
+        props2.gtcService.bus.getSubscriber().on("acars_new_client").handle((v) => {
+          if (!v) {
+            this.client.set(null);
+            this.canCreate.set(false);
+            return;
+          }
+          const funcs = [
+            "sendPdc",
+            "sendOceanicClearance",
+            "atisRequest",
+            "sendTelex",
+            "sendLevelChange",
+            "sendSpeedChange",
+            "sendDirectTo",
+            "sendLogonRequest",
+            "sendLogoffRequest"
+          ];
+          const client = {
+            callsign: v.callsign,
+            active_station: null,
+            pending_station: null
+          };
+          for (const key of funcs) {
+            client[key] = function() {
+              props2.gtcService.bus.getPublisher().pub(
+                "acars_message_request",
+                {
+                  key,
+                  arguments
+                },
+                true,
+                false
+              );
+              return true;
+            };
+          }
           this.client.set(client);
           this.canCreate.set(true);
-        } else {
-          this.canCreate.set(false);
-          this.client.set(null);
-        }
-      });
+        });
+      }
       this.options = [
         {
           title: "Pre Departure Clearance",
           freeText: true,
           freeTextCount: 5,
           onSend: async (d) => {
+            const client = this.client.get();
+            if (!client) return false;
+            return client.sendPdc(
+              d.Facility,
+              d.Departure,
+              d.Arrival,
+              d.Stand,
+              d.Atis,
+              convertUnixToHHMM(Date.now()),
+              d.FreeText
+            );
           },
           fields: [
             {
@@ -1117,7 +1292,7 @@
               validate: (v) => v.length
             },
             {
-              name: "Gate",
+              name: "Stand",
               allowSpaces: true,
               maxLength: 10,
               type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
@@ -1354,7 +1529,7 @@
       ];
     }
     onMessage(message2) {
-      this.bus.getPublisher().pub("acars_message", message2);
+      this.bus.getPublisher().pub("acars_message", message2, true);
       this.latestMessage.set(message2);
       if (message2.type === "send") return;
       this.bus.getPublisher().pub(
@@ -1565,8 +1740,8 @@
       return /* @__PURE__ */ msfssdk.FSComponent.buildComponent(import_msfs_sdk2.FSComponent.Fragment, null, this.props.children);
     }
   };
-  var onSetupPage = (ctor, props, service) => {
-    const rendered = new ctor(props).render();
+  var onSetupPage = (ctor, props2, service) => {
+    const rendered = new ctor(props2).render();
     return new Proxy2({
       children: [
         rendered,
@@ -1582,6 +1757,32 @@
         )
       ]
     });
+  };
+  var onSetupPageLiv2AirCj3 = (ctor, props2, service) => {
+    window.wtg3000gtc.GtcViewKeys.TextDialog = "KeyboardDialog";
+    class BtnClass extends import_msfs_sdk2.DisplayComponent {
+      render() {
+        return /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
+          import_msfs_garminsdk2.TouchButton,
+          {
+            label: "ACARS",
+            class: "gtc-directory-button",
+            onPressed: () => {
+              service.changePageTo("CPDLC");
+            }
+          }
+        );
+      }
+    }
+    const instance = new ctor(props2);
+    const btn = new BtnClass({ gtcService: service });
+    const render = instance.render.bind(instance);
+    instance.render = () => {
+      const orig = render();
+      orig.children[2].children = [btn.render()];
+      return orig;
+    };
+    return instance;
   };
   var registerViews = (ctx, fms) => {
     ctx.registerView(
@@ -1606,13 +1807,38 @@
   var GarminAcarsPlugin = class extends import_msfs_wtg3000_gtc3.AbstractG3000GtcPlugin {
     constructor(binder) {
       super(binder);
+      window.acarsClient = null;
       this.binder = binder;
-      this.onComponentCreating = (ctor, props) => {
-        if (ctor.name === "GtcImgTouchButton" && props.label === "Crew Profile") {
-          return onSetupPage(ctor, props, this.binder.gtcService, this.binder.fms);
+      binder.gtcService.bus.getSubscriber().on("acars_instance_create").handle((v) => {
+        if (window.acarsSide !== "primary") {
+          window.acarsSide = "secondary";
         }
-        return void 0;
-      };
+      });
+      const title = SimVar.GetSimVarValue("TITLE", "string");
+      if (title.includes("CJ3+"))
+        this.onComponentCreating = (ctor, props2) => {
+          if (ctor.name === "CustomGtcUtilitiesPage") {
+            return onSetupPageLiv2AirCj3(
+              ctor,
+              props2,
+              this.binder.gtcService,
+              this.binder.fms
+            );
+          }
+          return void 0;
+        };
+      else
+        this.onComponentCreating = (ctor, props2) => {
+          if (ctor.name === "GtcImgTouchButton" && props2.label === "Crew Profile") {
+            return onSetupPage(
+              ctor,
+              props2,
+              this.binder.gtcService,
+              this.binder.fms
+            );
+          }
+          return void 0;
+        };
     }
     onInstalled() {
       this.loadCss("coui://html_ui/garmin-3000-acars/plugin.css");

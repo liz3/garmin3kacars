@@ -64,7 +64,7 @@ const responseOptions = (c) => {
   if (map[c]) return [...map[c], "STANDBY"];
   return null;
 };
-const messageStateUpdate = (state, message) => {
+export const messageStateUpdate = (state, message) => {
   if (message.type === "cpdlc" && message.content === "LOGON ACCEPTED") {
     if (state._stationCallback) state._stationCallback(message.from);
     state.active_station = message.from;
@@ -85,6 +85,7 @@ const poll = (state) => {
             if(message.from === state.callsign && message.type === "inforeq"){
               continue;
             }
+            message._id = state.idc++;
             messageStateUpdate(state, message);
             if (message.type === "cpdlc" && message.cpdlc.ra) {
               message.response = async (code) => {
@@ -96,13 +97,14 @@ const poll = (state) => {
                 sendAcarsMessage(
                   state,
                   message.from,
-                  `/data2/${state._min_count}/${message.cpdlc.mrn}/${code === "STANDBY" ? "NE" : "N"}/${code}`,
+                  `/data2/${state._min_count}/${message.cpdlc.min}/${code === "STANDBY" ? "NE" : "N"}/${code}`,
                   "cpdlc",
                 );
               };
               message.options = responseOptions(message.cpdlc.ra);
               message.respondSend = null;
             }
+            state.message_stack[message._id] = message;
             state._callback(message);
           }
           poll(state);
@@ -143,6 +145,8 @@ export const createClient = (code, callsign, aicraftType, messageCallback) => {
     pending_station: null,
     _min_count: 0,
     aircraft: aicraftType,
+    idc: 0,
+    message_stack: {}
   };
 
   state.dispose = () => {

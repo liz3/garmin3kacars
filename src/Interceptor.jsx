@@ -24,6 +24,33 @@ export const onSetupPage = (ctor, props, service) => {
     ],
   });
 };
+
+export const onSetupPageLiv2AirCj3 = (ctor, props, service) => {
+  // ??????????????????????????????
+  window.wtg3000gtc.GtcViewKeys.TextDialog = "KeyboardDialog";
+  class BtnClass extends DisplayComponent {
+    render() {
+      return (
+        <TouchButton
+          label={"ACARS"}
+          class={"gtc-directory-button"}
+          onPressed={() => {
+            service.changePageTo("CPDLC");
+          }}
+        />
+      );
+    }
+  }
+  const instance = new ctor(props);
+  const btn = new BtnClass({ gtcService: service });
+  const render = instance.render.bind(instance);
+  instance.render = () => {
+    const orig = render();
+    orig.children[2].children = [btn.render()];
+    return orig;
+  };
+  return instance;
+};
 export const registerViews = (ctx, fms) => {
   ctx.registerView(
     GtcViewLifecyclePolicy.Persistent,
