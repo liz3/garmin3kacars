@@ -24,13 +24,13 @@
     if (typeof require !== "undefined") return require.apply(this, arguments);
     throw Error('Dynamic require of "' + x + '" is not supported');
   });
-  var __copyProps = (to2, from, except, desc) => {
+  var __copyProps = (to, from, except, desc) => {
     if (from && typeof from === "object" || typeof from === "function") {
       for (let key of __getOwnPropNames(from))
-        if (!__hasOwnProp.call(to2, key) && key !== except)
-          __defProp(to2, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
     }
-    return to2;
+    return to;
   };
   var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
     // If the importer is in node compatibility mode or this is not an ESM
@@ -122,12 +122,19 @@
     if (message2.type === "cpdlc" && message2.content === "LOGON ACCEPTED") {
       if (state._stationCallback) state._stationCallback(message2.from);
       state.active_station = message2.from;
-      station.pending_station = null;
+      state.pending_station = null;
     } else if (message2.type === "cpdlc" && message2.content === "LOGOFF") {
       if (state._stationCallback) state._stationCallback(null);
       state.active_station = null;
-      station.pending_station = null;
+      state.pending_station = null;
     }
+  };
+  var cpdlcStringBuilder = (state, request, replyId = "") => {
+    if (state._min_count === 63) {
+      state._min_count = 0;
+    }
+    state._min_count++;
+    return `/data2/${state._min_count}/${replyId}/N/${request}`;
   };
   var poll = (state) => {
     state._interval = setTimeout(() => {
@@ -142,20 +149,22 @@
               message2._id = state.idc++;
               messageStateUpdate(state, message2);
               if (message2.type === "cpdlc" && message2.cpdlc.ra) {
-                message2.response = async (code) => {
-                  message2.respondSend = code;
-                  if (state._min_count === 63) {
-                    state._min_count = 0;
-                  }
-                  state._min_count++;
-                  sendAcarsMessage(
-                    state,
-                    message2.from,
-                    `/data2/${state._min_count}/${message2.cpdlc.min}/${code === "STANDBY" ? "NE" : "N"}/${code}`,
-                    "cpdlc"
-                  );
-                };
-                message2.options = responseOptions(message2.cpdlc.ra);
+                const opts = responseOptions(message2.cpdlc.ra);
+                if (opts)
+                  message2.response = async (code) => {
+                    message2.respondSend = code;
+                    if (state._min_count === 63) {
+                      state._min_count = 0;
+                    }
+                    state._min_count++;
+                    sendAcarsMessage(
+                      state,
+                      message2.from,
+                      `/data2/${state._min_count}/${message2.cpdlc.min}/${code === "STANDBY" ? "NE" : "N"}/${code}`,
+                      "cpdlc"
+                    );
+                  };
+                message2.options = opts;
                 message2.respondSend = null;
               }
               state.message_stack[message2._id] = message2;
@@ -202,10 +211,10 @@
       if (state._interval) clearInterval(state._interval);
       state._interval = null;
     };
-    state.sendTelex = async (to2, message2) => {
+    state.sendTelex = async (to, message2) => {
       const response = await sendAcarsMessage(
         state,
-        to2,
+        to,
         addMessage(state, message2.toUpperCase()),
         "telex"
       );
@@ -227,13 +236,13 @@
       }
       return text.startsWith("ok");
     };
-    state.sendLogonRequest = async (to2) => {
-      if (to2 === state.active_station) return;
-      state.pending_station = to2;
+    state.sendLogonRequest = async (to) => {
+      if (to === state.active_station) return;
+      state.pending_station = to;
       const response = await sendAcarsMessage(
         state,
-        to2,
-        addMessage(state, `REQUEST LOGON`),
+        to,
+        cpdlcStringBuilder(state, addMessage(state, `REQUEST LOGON`)),
         "cpdlc"
       );
       if (!response.ok) return false;
@@ -241,23 +250,24 @@
       return text.startsWith("ok");
     };
     state.sendLogoffRequest = async () => {
-      if (to !== state.active_station) return;
+      if (!state.active_station) return;
+      const station = state.active_station;
+      state.active_station = null;
+      if (state._stationCallback) state._stationCallback(null);
       const response = await sendAcarsMessage(
         state,
-        state.active_station,
-        addMessage(state, `LOGOFF`),
+        station,
+        cpdlcStringBuilder(state, addMessage(state, `LOGOFF`)),
         "cpdlc"
       );
       if (!response.ok) return false;
       const text = await response.text();
-      state.active_station = null;
-      if (state._stationCallback) state._stationCallback(null);
       return text.startsWith("ok");
     };
-    state.sendOceanicClearance = async (cs, to2, entryPoint, eta, level, mach, freeText) => {
+    state.sendOceanicClearance = async (cs, to, entryPoint, eta, level, mach, freeText) => {
       const response = await sendAcarsMessage(
         state,
-        to2,
+        to,
         addMessage(
           state,
           `REQUEST OCEANIC CLEARANCE ${cs} ${state.aircraft} ESTIMATING ${entryPoint} AT ${eta}Z FLIGHT LEVEL ${lvl} REQUEST MACH ${mach}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
@@ -268,13 +278,13 @@
       const text = await response.text();
       return text.startsWith("ok");
     };
-    state.sendPdc = async (to2, dep, arr, stand, atis, eob, freeText) => {
+    state.sendPdc = async (to, dep, arr, stand, atis, eob, freeText) => {
       const response = await sendAcarsMessage(
         state,
-        to2,
+        to,
         addMessage(
           state,
-          `REQUEST PREDEP CLEARANCE ${state.callsign} ${state.aircraft} TO ${arr} AT ${dep} ${stand} ${atis} ${eob}Z${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+          `REQUEST PREDEP CLEARANCE ${state.callsign} ${state.aircraft} TO ${arr} AT ${dep} ${stand} ATIS ${atis} ${eob}Z${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
         ),
         "telex"
       );
@@ -286,9 +296,12 @@
       const response = await sendAcarsMessage(
         state,
         state.active_station,
-        addMessage(
+        cpdlcStringBuilder(
           state,
-          `REQUEST ${climb ? "CLIMB" : "DESCEND"} TO FL${lvl2} DUE TO ${{ weather: "weather", performance: "aircraft performance" }[reason.toLowerCase()]}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+          addMessage(
+            state,
+            `REQUEST ${climb ? "CLIMB" : "DESCEND"} TO FL${lvl2} DUE TO ${{ weather: "weather", performance: "aircraft performance" }[reason.toLowerCase()]}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+          )
         ),
         "cpdlc"
       );
@@ -300,9 +313,12 @@
       const response = await sendAcarsMessage(
         state,
         state.active_station,
-        addMessage(
+        cpdlcStringBuilder(
           state,
-          `REQUEST ${unit === "knots" ? `${value} kts` : `M${value}`} DUE TO ${{ weather: "weather", performance: "aircraft performance" }[reason.toLowerCase()]}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+          addMessage(
+            state,
+            `REQUEST ${unit === "knots" ? `${value} kts` : `M${value}`} DUE TO ${{ weather: "weather", performance: "aircraft performance" }[reason.toLowerCase()]}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+          )
         ),
         "cpdlc"
       );
@@ -314,9 +330,12 @@
       const response = await sendAcarsMessage(
         state,
         state.active_station,
-        addMessage(
+        cpdlcStringBuilder(
           state,
-          `REQUEST DIRECT TO ${waypoint} DUE TO ${{ weather: "weather", performance: "aircraft performance" }[reason.toLowerCase()]}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+          addMessage(
+            state,
+            `REQUEST DIRECT TO ${waypoint} DUE TO ${{ weather: "weather", performance: "aircraft performance" }[reason.toLowerCase()]}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+          )
         ),
         "cpdlc"
       );
@@ -440,7 +459,6 @@
           return "";
         })()
       );
-      this.departureTime = import_msfs_sdk.Subject.create("");
       this.conBtnState = import_msfs_sdk.Subject.create("Logon");
       this.conBtnEnabled = import_msfs_sdk.Subject.create(false);
       this.acarsConnected = import_msfs_sdk.Subject.create(false);
@@ -458,7 +476,7 @@
         this.station.set(client.active_station || "----");
         this.nextStation.set(client.pending_station || "----");
         this.secondLineEnabled.set(
-          client.active_station || active.pending_station
+          client.active_station || client.pending_station
         );
         this.secondLineDotted.set(
           client.pending_station && !client.active_station
@@ -501,8 +519,11 @@
         },
         {
           label: "Filed Dep Time",
-          source: this.departureTime,
-          renderValue: (v) => v ? `${v / 60}:${v % 60}` : "__:__",
+          source: this.props.departureTime,
+          renderValue: (r) => {
+            const v = r > 60 * 24 ? r / 60 : r;
+            return v ? `${Math.floor(v / 60).toString().padStart(2, "0")}:${Math.floor(v % 60).toString().padStart(2, "0")}` : "__:__";
+          },
           type: import_msfs_wtg3000_gtc.GtcViewKeys.DurationDialog1
         }
       ];
@@ -531,7 +552,7 @@
         props.gtcService.bus.getPublisher().pub(
           "acars_message_request",
           {
-            key: !client.active_station ? "sendLogonRequest" : sendLogoffRequest,
+            key: !client.active_station ? "sendLogonRequest" : "sendLogoffRequest",
             arguments: [this.facility.get()]
           },
           true,
@@ -563,7 +584,8 @@
                 label: e.label,
                 allowSpaces: false,
                 maxLength: 20,
-                initialValue: e.source.get()
+                initialValue: e.source.get(),
+                initialInputText: e.source.get()
               });
               if (result.wasCancelled) {
                 return;
@@ -614,7 +636,7 @@
       super(...arguments);
       this.listRef = import_msfs_sdk.FSComponent.createRef();
       this.messages = import_msfs_sdk.ArraySubject.create();
-      this.listItemHeight = this.props.gtcService.orientation === "horizontal" ? 300 : 220;
+      this.listItemHeight = this.props.gtcService.orientation === "horizontal" ? 300 : 180;
       if (window.acarsSide === "primary") {
         this.props.gtcService.bus.getSubscriber().on("acars_message_state_request").handle((e) => {
           this.props.gtcService.bus.getPublisher().pub(
@@ -636,12 +658,16 @@
           e.type === "send" ? "Send" : e.options && !e.respondSend ? "Need Response" : "Incoming"
         );
         if (e.from === "acars") e.from = "";
-        e.viewed = false;
+        e.viewed = e.type === "send";
         this.messages.insert(e, 0);
       });
       this.props.gtcService.bus.getSubscriber().on("acars_message_read_state").handle((e) => {
         const message2 = this.messages.getArray().find((msg) => e.id === msg._id);
-        if (message2) message2.state.set(e.state);
+        if (message2) {
+          message2.state.set(e.state);
+          message2.viewed = true;
+          if (e.state === "Closed") message2.respondSend = e.option;
+        }
       });
     }
     onResume() {
@@ -696,9 +722,16 @@
       this.messageListRef = import_msfs_sdk.FSComponent.createRef();
       this.from = import_msfs_sdk.Subject.create("");
       this.content = import_msfs_sdk.Subject.create("");
+      this.itemHeight = import_msfs_sdk.Subject.create(0);
       this.option1 = import_msfs_sdk.Subject.create(null);
       this.option2 = import_msfs_sdk.Subject.create(null);
       this.option3 = import_msfs_sdk.Subject.create(null);
+      this.sizeInterval = setInterval(() => {
+        const elem = document.getElementById("message-content-container");
+        const height = elem.getBoundingClientRect().height + 30;
+        if (this.itemHeight.get() !== height)
+          this.itemHeight.set(height);
+      }, 250);
     }
     openMessage(message2) {
       this.message.set(message2);
@@ -709,32 +742,34 @@
         const arr = [this.option1, this.option2, this.option3];
         message2.options.forEach((v, i) => arr[i].set(v));
       } else {
-        this.bus.getPublisher().pub(
-          "acars_message_read_state",
-          {
-            id: message2._id,
-            state: "Viewed"
-          },
-          true,
-          false
-        );
+        if (!message2.viewed && message2.type !== "send") {
+          this.bus.getPublisher().pub(
+            "acars_message_read_state",
+            {
+              id: message2._id,
+              state: "Viewed"
+            },
+            true,
+            false
+          );
+          this.bus.getPublisher().pub(
+            "cas_deactivate_alert",
+            {
+              key: { uuid: "acars-msg" },
+              priority: import_msfs_sdk.AnnunciationType.Advisory
+            },
+            true,
+            false
+          );
+        }
       }
-      if (!message2.viewed) {
-        message2.viewed = true;
-        this.bus.getPublisher().pub(
-          "cas_deactivate_alert",
-          {
-            key: { uuid: "acars-msg" },
-            priority: import_msfs_sdk.AnnunciationType.Advisory
-          },
-          true,
-          false
-        );
-      }
+      message2.viewed = true;
     }
     destroy() {
       const value = this.messageListRef.getOrDefault();
       if (value) value.destroy();
+      if (this.sizeInterval)
+        clearInterval(this.sizeInterval);
       super.destroy();
     }
     onAfterRender(thisNode) {
@@ -771,7 +806,8 @@
                 "acars_message_read_state",
                 {
                   id: message2._id,
-                  state: "Closed"
+                  state: "Closed",
+                  option: e
                 },
                 true,
                 false
@@ -791,17 +827,19 @@
     }
     render() {
       const sidebarState = import_msfs_sdk.Subject.create(null);
-      return /* @__PURE__ */ msfssdk.FSComponent.buildComponent("div", { class: "acars-message-page" }, /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
+      return /* @__PURE__ */ msfssdk.FSComponent.buildComponent("div", { class: "acars-message-page" }, /* @__PURE__ */ msfssdk.FSComponent.buildComponent("div", { class: "header" }, /* @__PURE__ */ msfssdk.FSComponent.buildComponent("span", null, this.from)), /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
         import_msfs_wtg3000_gtc.GtcList,
         {
           class: "content-list",
           ref: this.messageListRef,
           listItemSpacingPx: 1,
+          itemsPerPage: 2,
           sidebarState,
-          bus: this.bus
+          bus: this.bus,
+          listItemHeightPx: this.itemHeight,
+          heightPx: this.props.gtcService.orientation === "horizontal" ? 380 : 260
         },
-        /* @__PURE__ */ msfssdk.FSComponent.buildComponent("div", { class: "header" }, /* @__PURE__ */ msfssdk.FSComponent.buildComponent("span", null, this.from)),
-        /* @__PURE__ */ msfssdk.FSComponent.buildComponent("div", { class: "content" }, /* @__PURE__ */ msfssdk.FSComponent.buildComponent("span", null, this.content))
+        /* @__PURE__ */ msfssdk.FSComponent.buildComponent(import_msfs_wtg3000_gtc.GtcListItem, null, /* @__PURE__ */ msfssdk.FSComponent.buildComponent("div", { class: "content" }, /* @__PURE__ */ msfssdk.FSComponent.buildComponent("span", { id: "message-content-container" }, this.content)))
       ), /* @__PURE__ */ msfssdk.FSComponent.buildComponent("div", { class: "options" }, this.renderOptionsItem(this.option1), this.renderOptionsItem(this.option2), this.renderOptionsItem(this.option3)));
     }
   };
@@ -866,7 +904,8 @@
               label: e.name,
               allowSpaces: e.allowSpaces || false,
               maxLength: e.maxLength || 4,
-              initialValue: this[`field_${e.name}`].get()
+              initialValue: this[`field_${e.name}`].get(),
+              initialInputText: this[`field_${e.name}`].get()
             });
             if (result.wasCancelled) {
               return;
@@ -884,7 +923,8 @@
                 label: x.name,
                 allowSpaces: x.allowSpaces || false,
                 maxLength: x.maxLength || 4,
-                initialValue: this[`field_${x.name}`].get()
+                initialValue: this[`field_${x.name}`].get(),
+                initialInputText: this[`field_${x.name}`].get()
               });
               if (result.wasCancelled) {
                 return;
@@ -957,7 +997,7 @@
         {
           class: "list",
           ref: this.listRef,
-          listItemSpacingPx: 1,
+          listItemSpacingPx: 5,
           sidebarState,
           bus: this.bus,
           data: this.fields,
@@ -1111,6 +1151,8 @@
         this.props.gtcService.bus.getPublisher().pub("acars_instance_create", {}, true, false);
       }
       this.latestMessage = import_msfs_sdk.Subject.create(null);
+      const now = /* @__PURE__ */ new Date();
+      this.depTime = import_msfs_sdk.Subject.create(now.getUTCHours() * 60 + now.getUTCMinutes());
       if (isPrimary) {
         this.props.gtcService.bus.getSubscriber().on("acars_state_request").handle((e) => {
           this.props.gtcService.bus.getPublisher().pub(
@@ -1228,13 +1270,18 @@
           onSend: async (d) => {
             const client = this.client.get();
             if (!client) return false;
+            let t = this.depTime.get();
+            if (t > 24 * 60) t /= 60;
+            const dt = /* @__PURE__ */ new Date();
+            dt.setUTCHours(Math.floor(t / 60));
+            dt.setUTCMinutes(Math.floor(t % 60));
             return client.sendPdc(
               d.Facility,
               d.Departure,
               d.Arrival,
               d.Stand,
               d.Atis,
-              convertUnixToHHMM(Date.now()),
+              convertUnixToHHMM(dt.getTime()),
               d.FreeText
             );
           },
@@ -1715,7 +1762,8 @@
           ref: contentRef,
           sidebarState,
           fms: this.props.fms,
-          client: this.client
+          client: this.client,
+          departureTime: this.depTime
         }
       );
     }

@@ -85,6 +85,7 @@ class StatusLine extends DisplayComponent {
 class StatusTab extends DisplayComponent {
   constructor() {
     super(...arguments);
+
     this.firstLineLeft =
       this.props.gtcService.orientation === "horizontal" ? "67px" : "36px";
     this.secondLineLeft =
@@ -113,7 +114,6 @@ class StatusTab extends DisplayComponent {
         return "";
       })(),
     );
-    this.departureTime = Subject.create("");
     this.conBtnState = Subject.create("Logon");
     this.conBtnEnabled = Subject.create(false);
     this.acarsConnected = Subject.create(false);
@@ -135,7 +135,7 @@ class StatusTab extends DisplayComponent {
         this.station.set(client.active_station || "----");
         this.nextStation.set(client.pending_station || "----");
         this.secondLineEnabled.set(
-          client.active_station || active.pending_station,
+          client.active_station || client.pending_station,
         );
         this.secondLineDotted.set(
           client.pending_station && !client.active_station,
@@ -178,8 +178,17 @@ class StatusTab extends DisplayComponent {
       },
       {
         label: "Filed Dep Time",
-        source: this.departureTime,
-        renderValue: (v) => (v ? `${v / 60}:${v % 60}` : "__:__"),
+        source: this.props.departureTime,
+        renderValue: (r) => {
+          const v = r > 60 * 24 ? r / 60 : r;
+          return v
+            ? `${Math.floor(v / 60)
+                .toString()
+                .padStart(2, "0")}:${Math.floor(v % 60)
+                .toString()
+                .padStart(2, "0")}`
+            : "__:__";
+        },
         type: GtcViewKeys.DurationDialog1,
       },
     ];
@@ -217,7 +226,9 @@ class StatusTab extends DisplayComponent {
       props.gtcService.bus.getPublisher().pub(
         "acars_message_request",
         {
-          key: !client.active_station ? "sendLogonRequest" : sendLogoffRequest,
+          key: !client.active_station
+            ? "sendLogonRequest"
+            : "sendLogoffRequest",
           arguments: [this.facility.get()],
         },
         true,
@@ -256,6 +267,7 @@ class StatusTab extends DisplayComponent {
                         allowSpaces: false,
                         maxLength: 20,
                         initialValue: e.source.get(),
+                        initialInputText: e.source.get(),
                       });
                     if (result.wasCancelled) {
                       return;
@@ -329,7 +341,7 @@ class CpdlcTab extends DisplayComponent {
     this.listRef = FSComponent.createRef();
     this.messages = ArraySubject.create();
     this.listItemHeight =
-      this.props.gtcService.orientation === "horizontal" ? 300 : 220;
+      this.props.gtcService.orientation === "horizontal" ? 300 : 180;
     if (window.acarsSide === "primary") {
       this.props.gtcService.bus
         .getSubscriber()
@@ -368,7 +380,7 @@ class CpdlcTab extends DisplayComponent {
               : "Incoming",
         );
         if (e.from === "acars") e.from = "";
-        e.viewed = false;
+        e.viewed = e.type === "send";
         this.messages.insert(e, 0);
       });
     this.props.gtcService.bus
@@ -378,7 +390,11 @@ class CpdlcTab extends DisplayComponent {
         const message = this.messages
           .getArray()
           .find((msg) => e.id === msg._id);
-        if (message) message.state.set(e.state);
+        if (message) {
+          message.state.set(e.state);
+          message.viewed = true;
+          if (e.state === "Closed") message.respondSend = e.option;
+        }
       });
   }
   onResume() {
@@ -453,11 +469,20 @@ class AcarsMessagePage extends GtcView {
     this.messageListRef = FSComponent.createRef();
     this.from = Subject.create("");
     this.content = Subject.create("");
+    this.itemHeight = Subject.create(0)
     // i cant anymore. this framework is so terrible
     this.option1 = Subject.create(null);
     this.option2 = Subject.create(null);
     this.option3 = Subject.create(null);
+
+    this.sizeInterval = setInterval(() => {
+      const elem = document.getElementById("message-content-container");
+      const height = elem.getBoundingClientRect().height + 30;
+      if(this.itemHeight.get() !== height)
+        this.itemHeight.set(height);
+    }, 250);
   }
+
   openMessage(message) {
     this.message.set(message);
     this.from.set(message.from);
@@ -467,32 +492,35 @@ class AcarsMessagePage extends GtcView {
       const arr = [this.option1, this.option2, this.option3];
       message.options.forEach((v, i) => arr[i].set(v));
     } else {
-      this.bus.getPublisher().pub(
-        "acars_message_read_state",
-        {
-          id: message._id,
-          state: "Viewed",
-        },
-        true,
-        false,
-      );
+      if (!message.viewed && message.type !== "send") {
+        this.bus.getPublisher().pub(
+          "acars_message_read_state",
+          {
+            id: message._id,
+            state: "Viewed",
+          },
+          true,
+          false,
+        );
+        this.bus.getPublisher().pub(
+          "cas_deactivate_alert",
+          {
+            key: { uuid: "acars-msg" },
+            priority: AnnunciationType.Advisory,
+          },
+          true,
+          false,
+        );
+      }
     }
-    if (!message.viewed) {
-      message.viewed = true;
-      this.bus.getPublisher().pub(
-        "cas_deactivate_alert",
-        {
-          key: { uuid: "acars-msg" },
-          priority: AnnunciationType.Advisory,
-        },
-        true,
-        false,
-      );
-    }
+
+    message.viewed = true;
   }
   destroy() {
     const value = this.messageListRef.getOrDefault();
     if (value) value.destroy();
+    if(this.sizeInterval)
+      clearInterval(this.sizeInterval);
     super.destroy();
   }
   onAfterRender(thisNode) {
@@ -531,6 +559,7 @@ class AcarsMessagePage extends GtcView {
               {
                 id: message._id,
                 state: "Closed",
+                option: e,
               },
               true,
               false,
@@ -552,19 +581,26 @@ class AcarsMessagePage extends GtcView {
     const sidebarState = Subject.create(null);
     return (
       <div class={"acars-message-page"}>
+             <div class={"header"}>
+            <span>{this.from}</span>
+          </div>
         <GtcList
+
           class={"content-list"}
           ref={this.messageListRef}
           listItemSpacingPx={1}
+          itemsPerPage={2}
           sidebarState={sidebarState}
           bus={this.bus}
+          listItemHeightPx={this.itemHeight}
+          heightPx={this.props.gtcService.orientation === "horizontal" ? 380 : 260}
         >
-          <div class={"header"}>
-            <span>{this.from}</span>
-          </div>
+        <GtcListItem >
           <div class={"content"}>
-            <span>{this.content}</span>
+            <span id="message-content-container">{this.content}</span>
           </div>
+        </GtcListItem>
+
         </GtcList>
         <div class={"options"}>
           {this.renderOptionsItem(this.option1)}
@@ -642,6 +678,7 @@ class AcarsSendTemplate extends GtcView {
                   allowSpaces: e.allowSpaces || false,
                   maxLength: e.maxLength || 4,
                   initialValue: this[`field_${e.name}`].get(),
+                  initialInputText: this[`field_${e.name}`].get(),
                 });
               if (result.wasCancelled) {
                 return;
@@ -666,6 +703,7 @@ class AcarsSendTemplate extends GtcView {
                     allowSpaces: x.allowSpaces || false,
                     maxLength: x.maxLength || 4,
                     initialValue: this[`field_${x.name}`].get(),
+                    initialInputText: this[`field_${x.name}`].get(),
                   });
                 if (result.wasCancelled) {
                   return;
@@ -745,7 +783,7 @@ class AcarsSendTemplate extends GtcView {
         <GtcList
           class={"list"}
           ref={this.listRef}
-          listItemSpacingPx={1}
+          listItemSpacingPx={5}
           sidebarState={sidebarState}
           bus={this.bus}
           data={this.fields}
@@ -920,7 +958,8 @@ class AcarsTabView extends GtcView {
         .pub("acars_instance_create", {}, true, false);
     }
     this.latestMessage = Subject.create(null);
-
+    const now = new Date();
+    this.depTime = Subject.create(now.getUTCHours() * 60 + now.getUTCMinutes());
     if (isPrimary) {
       this.props.gtcService.bus
         .getSubscriber()
@@ -941,12 +980,10 @@ class AcarsTabView extends GtcView {
         .on("acars_state_response")
         .handle((e) => {
           if (e.client) {
-            this.props.gtcService.bus
-              .getPublisher()
-              .pub("acars_status_param", {
-                label: "Flight ID",
-                value: e.client.callsign,
-              });
+            this.props.gtcService.bus.getPublisher().pub("acars_status_param", {
+              label: "Flight ID",
+              value: e.client.callsign,
+            });
             props.gtcService.bus.getPublisher().pub("acars_new_client", {
               callsign: e.client.callsign,
             });
@@ -1069,13 +1106,18 @@ class AcarsTabView extends GtcView {
         onSend: async (d) => {
           const client = this.client.get();
           if (!client) return false;
+          let t = this.depTime.get();
+          if (t > 24 * 60) t /= 60;
+          const dt = new Date();
+          dt.setUTCHours(Math.floor(t / 60));
+          dt.setUTCMinutes(Math.floor(t % 60));
           return client.sendPdc(
             d.Facility,
             d.Departure,
             d.Arrival,
             d.Stand,
             d.Atis,
-            convertUnixToHHMM(Date.now()),
+            convertUnixToHHMM(dt.getTime()),
             d.FreeText,
           );
         },
@@ -1554,6 +1596,7 @@ class AcarsTabView extends GtcView {
         sidebarState={sidebarState}
         fms={this.props.fms}
         client={this.client}
+        departureTime={this.depTime}
       />
     );
   }

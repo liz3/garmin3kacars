@@ -33,7 +33,7 @@
   --acars-page-tab-container-width: 470px;
   --acars-page-tab-container-height: 380px;
   --acars-page-display-page-status-tab-padding: 12px 15px 17px 9px;
-    --acars-page-display-button-right-margin: 12px;
+  --acars-page-display-button-right-margin: 12px;
   --acars-page-display-button-width: 80px;
   --acars-page-display-button-height: 85px;
   --acars-page-display-page-status-tab-padding: 25px 30px 35px 18px;
@@ -211,7 +211,7 @@
   --acars-settings-slider-thumb-width: 60px;
 }
 .gtc-vertical .acars-message-dialog {
---acars-message-dialog-item-font-size: 20px;
+  --acars-message-dialog-item-font-size: 20px;
 }
 .gtc-horizontal .acars-message-dialog {
   --acars-message-dialog-item-font-size: 26px;
@@ -235,13 +235,13 @@
 
 .acars-message-dialog .header {
   width: 100%;
-  height: 10%;
+  height: 15%;
   text-align: center;
   font-size: var(--acars-message-dialog-item-font-size);
 }
 .acars-message-dialog .list {
   width: 100%;
-  height: 75%;
+  height: 70%;
 }
 .acars-message-dialog .item {
   width: 100%;
@@ -251,15 +251,16 @@
   width: 100%;
   height: 15%;
   display: flex;
+  padding: 6px;
   justify-content: center;
 }
 .acars-message-dialog .footer .touch-button {
-  width: 100%;
+  width: 95%;
   font-size: 26px;
 }
 .gtc-horizontal .acars-message-dialog {
   --acars-message-popup-top: 45px;
-  --acars-message-popup-width: 600px;
+  --acars-message-popup-width: 650px;
   --acars-message-popup-height: 715px;
 
   --acars-message-popup-button-icon-width: 100px;
@@ -277,7 +278,7 @@
 
 .gtc-vertical .acars-message-dialog {
   --acars-message-popup-top: 23px;
-  --acars-message-popup-width: 270px;
+  --acars-message-popup-width: 320px;
   --acars-message-popup-height: 385px;
 
   --acars-message-popup-button-icon-width: 50px;
@@ -310,7 +311,7 @@
 
 .acars-message-page .content-list {
   width: 100%;
-  height: calc(100% - var(--acars-message-page-btn-row-height) - 20px);
+  height: calc(100% - var(--acars-message-page-btn-row-height) - 40px);
 }
 .acars-message-page .content-list .content {
   width: 100%;
@@ -319,7 +320,7 @@
   font-size: var(--acars-message-page-content-font-size);
   text-wrap: wrap;
 }
-.acars-message-page .content-list .header {
+.acars-message-page .header {
   width: 100%;
   padding: 12px;
   text-align: center;
@@ -360,8 +361,7 @@
   --acars-message-page-header-font-size: 35px;
   --acars-message-page-content-font-size: 30px;
   --acars-message-page-btn-font-size: 29px;
-    --acars-message-page-btn-row-height: 20%;
-
+  --acars-message-page-btn-row-height: 20%;
 }
 
 .gtc-vertical .acars-message-page {
@@ -381,12 +381,10 @@
 
   --acars-message-page-slider-thumb-width: 60px;
 
-    --acars-message-page-header-font-size: 26px;
-    --acars-message-page-content-font-size: 20px;
-    --acars-message-page-btn-font-size: 15px;
-    --acars-message-page-btn-row-height: 15%;
-
-
+  --acars-message-page-header-font-size: 26px;
+  --acars-message-page-content-font-size: 20px;
+  --acars-message-page-btn-font-size: 15px;
+  --acars-message-page-btn-row-height: 15%;
 }
 
 .gtc-horizontal .acars-page-status-tab {
@@ -431,7 +429,7 @@
 
   --acars-status-tab-tow-label-margin: 5px 0px;
 
-    --acars-status-tab-right-normal-size: 18px;
+  --acars-status-tab-right-normal-size: 18px;
   --acars-status-tab-right-big-size: 24px;
 }
 
@@ -447,9 +445,8 @@
   --acars-cpdlc-tab-right-button-margin-bottom: 5px;
 
   --acars-cpdlc-tab-tow-label-margin: 10px 0px;
-    --acars-cpdlc-tab-message-font-size: 38px;
-    --acars-cpdlc-tab-message-status-font-size: 26px;
-
+  --acars-cpdlc-tab-message-font-size: 38px;
+  --acars-cpdlc-tab-message-status-font-size: 26px;
 }
 
 .gtc-vertical .acars-page-cpdlc-tab {
@@ -465,21 +462,20 @@
 
   --acars-cpdlc-tab-tow-label-margin: 5px 0px;
   --acars-cpdlc-tab-message-font-size: 22px;
-      --acars-cpdlc-tab-message-status-font-size: 18px;
-
+  --acars-cpdlc-tab-message-status-font-size: 18px;
 }
 
 .gtc-vertical .acars-status-line {
-  --acars-status-tab-line-length: 11px;
-    --acars-status-tab-line-length-short: 6px;
+  --acars-status-tab-line-length: 10px;
+  --acars-status-tab-line-length-short: 6px;
+  --acars-status-tab-line-height: 3px;
 }
 
 .gtc-horizontal .acars-status-line {
   --acars-status-tab-line-length: 21px;
-    --acars-status-tab-line-length-short: 12px;
-
+  --acars-status-tab-line-length-short: 12px;
+  --acars-status-tab-line-height: 5px;
 }
-
 
 .acars-status-page-tab-left {
   position: absolute;
@@ -519,10 +515,10 @@
 }
 .acars-status-page-tab-right .big {
   font-size: var(--acars-status-tab-right-big-size);
-    display: block;
+  display: block;
 }
 .acars-status-page-tab-right .border-btm {
-  border-bottom:var(--gtc-black-background-border);
+  border-bottom: var(--gtc-black-background-border);
 }
 .acars-status-page-tab-right .state-btn {
   width: 180px;
@@ -546,13 +542,13 @@
 .acars-status-line .acars-l-g {
   display: inline-block;
   width: var(--acars-status-tab-line-length);
-  height: 5px;
+  height: var(--acars-status-tab-line-height);
 }
 
 .acars-status-line .acars-l-s {
   display: inline-block;
   width: var(--acars-status-tab-line-length-short);
-  height: 5px;
+  height: var(--acars-status-tab-line-height);
 }
 .acars-status-line.line-dotted > .acars-l-s {
   opacity: 0;
