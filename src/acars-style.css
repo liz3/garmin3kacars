@@ -195,7 +195,7 @@
 
 .gtc-vertical .acars-settings {
   --acars-settings-top: 23px;
-  --acars-settings-width: 240px;
+  --acars-settings-width: 290px;
   --acars-settings-height: 385px;
 
   --acars-settings-button-icon-width: 50px;
@@ -235,13 +235,14 @@
 
 .acars-message-dialog .header {
   width: 100%;
-  height: 15%;
+  height: 10%;
   text-align: center;
+  padding: 5px 0;
   font-size: var(--acars-message-dialog-item-font-size);
 }
 .acars-message-dialog .list {
   width: 100%;
-  height: 70%;
+  height: 75%;
 }
 .acars-message-dialog .item {
   width: 100%;
@@ -311,7 +312,7 @@
 
 .acars-message-page .content-list {
   width: 100%;
-  height: calc(100% - var(--acars-message-page-btn-row-height) - 40px);
+  height: calc(100% - var(--acars-message-page-btn-row-height) - 80px);
 }
 .acars-message-page .content-list .content {
   width: 100%;

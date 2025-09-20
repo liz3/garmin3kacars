@@ -42,12 +42,12 @@
   ));
 
   // src/app.mjs
-  var import_msfs_sdk3 = __toESM(__require("@microsoft/msfs-sdk"), 1);
+  var import_msfs_sdk4 = __toESM(__require("@microsoft/msfs-sdk"), 1);
   var import_msfs_wtg3000_gtc3 = __require("@microsoft/msfs-wtg3000-gtc");
 
   // src/Interceptor.jsx
-  var import_msfs_garminsdk2 = __require("@microsoft/msfs-garminsdk");
-  var import_msfs_sdk2 = __require("@microsoft/msfs-sdk");
+  var import_msfs_garminsdk3 = __require("@microsoft/msfs-garminsdk");
+  var import_msfs_sdk3 = __require("@microsoft/msfs-sdk");
 
   // src/AcarsTabView.jsx
   var import_msfs_wtg3000_gtc = __require("@microsoft/msfs-wtg3000-gtc");
@@ -119,11 +119,11 @@
     return null;
   };
   var messageStateUpdate = (state, message2) => {
-    if (message2.type === "cpdlc" && message2.content === "LOGON ACCEPTED") {
+    if (message2.type === "cpdlc" && message2.content === "LOGON ACCEPTED" && state.pending_station) {
       if (state._stationCallback) state._stationCallback(message2.from);
       state.active_station = message2.from;
       state.pending_station = null;
-    } else if (message2.type === "cpdlc" && message2.content === "LOGOFF") {
+    } else if (message2.type === "cpdlc" && message2.content === "LOGOFF" && state.active_station) {
       if (state._stationCallback) state._stationCallback(null);
       state.active_station = null;
       state.pending_station = null;
@@ -139,7 +139,6 @@
   var poll = (state) => {
     state._interval = setTimeout(() => {
       sendAcarsMessage(state, "SERVER", "Nothing", "POLL").then((response) => {
-        console.log(response);
         if (response.ok) {
           response.text().then((raw) => {
             for (const message2 of parseMessages(raw)) {
@@ -234,6 +233,21 @@
       for (const message2 of parseMessages(text)) {
         state._callback(message2);
       }
+      return text.startsWith("ok");
+    };
+    state.sendPositionReport = async (fl, mach, wp, wpEta, nextWp, nextWpEta, followWp) => {
+      if (!state.active_station) return;
+      const content = `OVER ${wp} AT ${wpEta}Z FL${fl}, ESTIMATING ${nextWp} AT ${nextWpEta}Z, THEREAFTER ${followWp}. CURRENT SPEED M${mach}`.toUpperCase();
+      const response = await sendAcarsMessage(
+        state,
+        state.active_station,
+        `/DATA1/*/*/*/*/FL${fl}/*/${mach}/
+
+${content}`,
+        "position"
+      );
+      addMessage(state, content);
+      const text = await response.text();
       return text.startsWith("ok");
     };
     state.sendLogonRequest = async (to) => {
@@ -354,13 +368,33 @@
     "Asobo TBM 930": "TMB9",
     "Citation CJ3+": "C25B"
   };
+  var weights = {
+    "Asobo Cessna Citation Longitude": {
+      pax: [3, 5, 4, 6, 7, 9, 8, 10],
+      cargo: [11, 12]
+    },
+    "Asobo TBM 930": {
+      pax: [2, 3, 4, 5, 6],
+      cargo: [7, 8]
+    },
+    "Citation CJ3+": {
+      pax: [1, 2, 3, 4, 5, 6, 7, 8.9],
+      cargo: [10, 11]
+    }
+  };
   var getAircraftIcao = () => {
     const v = SimVar.GetSimVarValue("TITLE", "string");
     for (const k in models) {
-      if (v.includes(k))
-        return models[k];
+      if (v.includes(k)) return models[k];
     }
     return "";
+  };
+  var getAircraftPayloadStations = () => {
+    const v = SimVar.GetSimVarValue("TITLE", "string");
+    for (const k in weights) {
+      if (v.includes(k)) return weights[k];
+    }
+    return null;
   };
   var AircraftModels_default = getAircraftIcao;
 
@@ -729,8 +763,7 @@
       this.sizeInterval = setInterval(() => {
         const elem = document.getElementById("message-content-container");
         const height = elem.getBoundingClientRect().height + 30;
-        if (this.itemHeight.get() !== height)
-          this.itemHeight.set(height);
+        if (this.itemHeight.get() !== height) this.itemHeight.set(height);
       }, 250);
     }
     openMessage(message2) {
@@ -741,6 +774,15 @@
       if (message2.options && !message2.respondSend) {
         const arr = [this.option1, this.option2, this.option3];
         message2.options.forEach((v, i) => arr[i].set(v));
+        this.bus.getPublisher().pub(
+          "cas_deactivate_alert",
+          {
+            key: { uuid: "acars-msg" },
+            priority: import_msfs_sdk.AnnunciationType.Advisory
+          },
+          true,
+          false
+        );
       } else {
         if (!message2.viewed && message2.type !== "send") {
           this.bus.getPublisher().pub(
@@ -768,8 +810,7 @@
     destroy() {
       const value = this.messageListRef.getOrDefault();
       if (value) value.destroy();
-      if (this.sizeInterval)
-        clearInterval(this.sizeInterval);
+      if (this.sizeInterval) clearInterval(this.sizeInterval);
       super.destroy();
     }
     onAfterRender(thisNode) {
@@ -1043,6 +1084,9 @@
       this.hoppieValue = import_msfs_sdk.Subject.create(
         this.props.settingsManager.getSetting("acars_code").get()
       );
+      this.simbriefId = import_msfs_sdk.Subject.create(
+        this.props.settingsManager.getSetting("g3ka_simbrief_id").get()
+      );
     }
     destroy() {
       const value = this.listRef.getOrDefault();
@@ -1086,6 +1130,30 @@
               this.props.settingsManager.getSetting("acars_code").set(iff.value);
               SetStoredData("hoppie_code", iff.value);
               iff.remove();
+            }
+          }
+        )),
+        /* @__PURE__ */ msfssdk.FSComponent.buildComponent(import_msfs_wtg3000_gtc.GtcListItem, null, /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
+          import_msfs_wtg3000_gtc.GtcValueTouchButton,
+          {
+            class: "acars-settings-button",
+            label: "Simbrief Id",
+            renderValue: (v) => v && v.length ? v : "----",
+            state: this.simbriefId,
+            isInList: true,
+            onPressed: async () => {
+              const result = await this.props.gtcService.openPopup(import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog, "normal", "hide").ref.request({
+                label: "Simbrief Id",
+                allowSpaces: false,
+                maxLength: 10,
+                initialValue: this.simbriefId.get(),
+                initialInputText: this.simbriefId.get()
+              });
+              if (!result.wasCancelled) {
+                this.simbriefId.set(result.payload);
+                this.props.settingsManager.getSetting("g3ka_simbrief_id").set(result.payload);
+                SetStoredData("g3ka_simbrief_id", result.payload);
+              }
             }
           }
         ))
@@ -1141,11 +1209,17 @@
         {
           defaultValue: GetStoredData("hoppie_code"),
           name: "acars_code"
+        },
+        {
+          defaultValue: GetStoredData("g3ka_simbrief_id"),
+          name: "g3ka_simbrief_id"
         }
       ]);
       const isPrimary = window.acarsSide !== "secondary";
       this.canCreate = import_msfs_sdk.Subject.create(false);
       this.client = import_msfs_sdk.Subject.create(null);
+      this.distance = import_msfs_sdk.Subject.create(null);
+      this.groundSpeed = import_msfs_sdk.Subject.create(null);
       if (isPrimary) {
         window.acarsSide = "primary";
         this.props.gtcService.bus.getPublisher().pub("acars_instance_create", {}, true, false);
@@ -1153,6 +1227,12 @@
       this.latestMessage = import_msfs_sdk.Subject.create(null);
       const now = /* @__PURE__ */ new Date();
       this.depTime = import_msfs_sdk.Subject.create(now.getUTCHours() * 60 + now.getUTCMinutes());
+      this.props.gtcService.bus.getSubscriber().on("lnavdata_waypoint_distance").handle((v) => {
+        this.distance.set(v);
+      });
+      this.props.gtcService.bus.getSubscriber().on("ground_speed").handle((v) => {
+        this.groundSpeed.set(v);
+      });
       if (isPrimary) {
         this.props.gtcService.bus.getSubscriber().on("acars_state_request").handle((e) => {
           this.props.gtcService.bus.getPublisher().pub(
@@ -1382,7 +1462,7 @@
               allowSpaces: false,
               maxLength: 20,
               type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
-              displayFallback: "----",
+              displayFallback: "------",
               validate: (v) => v.length > 0
             },
             {
@@ -1417,6 +1497,118 @@
               type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
               displayFallback: ".--",
               validate: (v) => v.length && !Number.isNaN(Number.parseInt(v))
+            }
+          ]
+        },
+        {
+          title: "Position Report",
+          onSend: async (d) => {
+            const client = this.client.get();
+            if (!client) return false;
+            return client.sendPositionReport(
+              d.FL,
+              d.Mach,
+              d["Waypoint"],
+              d["Waypoint ATA"],
+              d["Following Waypoint"],
+              d["Following ETA"],
+              d["Next Waypoint"]
+            );
+          },
+          fields: [
+            {
+              name: "Mach",
+              allowSpaces: false,
+              maxLength: 4,
+              type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
+              displayFallback: "-----",
+              validate: (v) => v.length && !Number.isNaN(Number.parseFloat(v)),
+              initialValue: () => `${SimVar.GetSimVarValue("AIRSPEED MACH", "mach").toFixed(1)}`
+            },
+            {
+              name: "FL",
+              allowSpaces: false,
+              maxLength: 5,
+              type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
+              displayFallback: "---",
+              transform: (v) => v.replace("FL", ""),
+              validate: (v) => v.length && !Number.isNaN(Number.parseFloat(v)),
+              inititalValue: () => {
+                const v = SimVar.GetSimVarValue("INDICATED ALTITUDE", "feet");
+                return (v / 100).toFixed(0);
+              }
+            },
+            {
+              name: "Waypoint",
+              allowSpaces: false,
+              maxLength: 10,
+              type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
+              displayFallback: "-----",
+              validate: (v) => v.length,
+              initialValue: () => {
+                const fp = this.props.fms.getPrimaryFlightPlan();
+                const leg = fp.getLeg(fp.activeLateralLeg);
+                if (leg) return leg.name;
+              }
+            },
+            {
+              name: "Waypoint ATA",
+              allowSpaces: false,
+              maxLength: 10,
+              type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
+              displayFallback: "-----",
+              validate: (v) => v.length,
+              initialValue: () => {
+                const time = /* @__PURE__ */ new Date();
+                const rem = 60 * (this.distance.get() / this.groundSpeed.get());
+                time.setUTCHours(time.getUTCHours() + Math.floor(rem / 60));
+                time.setUTCMinutes(time.getUTCMinutes() + Math.floor(rem % 60));
+                return `${time.getUTCHours().toString().padStart(2, "0")}${time.getUTCMinutes().toString().padStart(2, "0")}`;
+              }
+            },
+            {
+              name: "Following Waypoint",
+              allowSpaces: false,
+              maxLength: 10,
+              type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
+              displayFallback: "-----",
+              validate: (v) => v.length,
+              initialValue: () => {
+                const fp = this.props.fms.getPrimaryFlightPlan();
+                const leg = fp.getLeg(fp.activeLateralLeg + 1);
+                if (leg) return leg.name;
+              }
+            },
+            {
+              name: "Following ETA",
+              allowSpaces: false,
+              maxLength: 10,
+              type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
+              displayFallback: "-----",
+              validate: (v) => v.length,
+              initialValue: () => {
+                const fp = this.props.fms.getPrimaryFlightPlan();
+                const leg = fp.getLeg(fp.activeLateralLeg + 1);
+                if (!leg) return null;
+                const time = /* @__PURE__ */ new Date();
+                const rem = 60 * ((this.distance.get() + leg.calculated.distance / 1852) / this.groundSpeed.get());
+                time.setUTCHours(time.getUTCHours() + Math.floor(rem / 60));
+                time.setUTCMinutes(time.getUTCMinutes() + Math.floor(rem % 60));
+                return `${time.getUTCHours().toString().padStart(2, "0")}${time.getUTCMinutes().toString().padStart(2, "0")}`;
+              }
+            },
+            {
+              name: "Next Waypoint",
+              allowSpaces: false,
+              maxLength: 10,
+              type: import_msfs_wtg3000_gtc.GtcViewKeys.TextDialog,
+              displayFallback: "-----",
+              validate: (v) => v.length,
+              initialValue: () => {
+                const fp = this.props.fms.getPrimaryFlightPlan();
+                const leg = fp.getLeg(fp.activeLateralLeg + 2);
+                if (leg) return leg.name;
+              }
             }
           ]
         },
@@ -1783,18 +1975,101 @@
 
   // src/Interceptor.jsx
   var import_msfs_wtg3000_gtc2 = __require("@microsoft/msfs-wtg3000-gtc");
-  var Proxy2 = class extends import_msfs_sdk2.DisplayComponent {
+
+  // src/WeightAndBalance.mjs
+  var import_msfs_wtg3000_common = __require("@microsoft/msfs-wtg3000-common");
+  var import_msfs_garminsdk2 = __require("@microsoft/msfs-garminsdk");
+  var import_msfs_sdk2 = __require("@microsoft/msfs-sdk");
+  var loadFuelAndBalance = async (gtcService, instance) => {
+    try {
+      const response = await fetch(
+        `https://www.simbrief.com/api/xml.fetcher.php?json=1&userid=${GetStoredData("g3ka_simbrief_id")}`
+      );
+      const json = await response.json();
+      const { weights: weights2 } = json;
+      const stations = getAircraftPayloadStations();
+      const pub = gtcService.bus.getPublisher();
+      const weightFuelSettingsManager = import_msfs_wtg3000_common.WeightFuelUserSettings.getManager(
+        gtcService.bus
+      );
+      const unitsSettingManager = import_msfs_garminsdk2.UnitsUserSettings.getManager(gtcService.bus);
+      const unit = json.params.units;
+      const simUnitVar = unit === "kgs" ? "kilograms" : "pounds";
+      const paxCount = Number.parseInt(weights2.pax_count_actual);
+      const payloadTotal = Number.parseInt(weights2.payload);
+      const cargo = Number.parseInt(weights2.cargo);
+      if (paxCount > stations.pax.length) {
+        const paxWeight2 = payloadTotal - cargo;
+        const stationWeight = paxWeight2 / stations.pax.length;
+        for (const station of stations.pax) {
+          SimVar.SetSimVarValue(
+            `PAYLOAD STATION WEIGHT:${station}`,
+            simUnitVar,
+            stationWeight
+          );
+        }
+      } else {
+        const paxWeight2 = Number.parseFloat(weights2.pax_weight);
+        for (let i = 0; i < paxCount; i++) {
+          SimVar.SetSimVarValue(
+            `PAYLOAD STATION WEIGHT:${stations.pax[i]}`,
+            simUnitVar,
+            paxWeight2
+          );
+        }
+      }
+      const cargoStationWeight = cargo / stations.cargo.length;
+      for (const station of stations.cargo) {
+        SimVar.SetSimVarValue(
+          `PAYLOAD STATION WEIGHT:${station}`,
+          simUnitVar,
+          cargoStationWeight
+        );
+      }
+      const weightUnit = unitsSettingManager.weightUnits.get();
+      const simBriefUnit = unit === "kgs" ? import_msfs_sdk2.UnitType.KILOGRAM : import_msfs_sdk2.UnitType.POUND;
+      const paxWeight = Number.parseFloat(weights2.pax_weight);
+      weightFuelSettingsManager.getSetting("weightFuelNumberPax").set(paxCount);
+      weightFuelSettingsManager.getSetting("weightFuelAvgPax").set(simBriefUnit.convertTo(paxWeight, import_msfs_sdk2.UnitType.POUND));
+      weightFuelSettingsManager.getSetting("weightFuelCargo").set(simBriefUnit.convertTo(cargo, import_msfs_sdk2.UnitType.POUND));
+      const fuelTotal = Number.parseInt(json.fuel.plan_ramp);
+      const fuel = fuelTotal / 2;
+      const ratio = SimVar.GetSimVarValue("FUEL WEIGHT PER GALLON", simUnitVar);
+      SimVar.SetSimVarValue(
+        "FUEL TANK LEFT MAIN QUANTITY",
+        "gallons",
+        fuel / ratio
+      );
+      SimVar.SetSimVarValue(
+        "FUEL TANK RIGHT MAIN QUANTITY",
+        "gallons",
+        fuel / ratio
+      );
+      if (!instance)
+        return true;
+      await new Promise((r) => setTimeout(r, 2e3));
+      instance.onFobSyncPressed();
+      return true;
+    } catch (err) {
+      return false;
+    }
+  };
+
+  // src/Interceptor.jsx
+  var Proxy2 = class extends import_msfs_sdk3.DisplayComponent {
     render() {
-      return /* @__PURE__ */ msfssdk.FSComponent.buildComponent(import_msfs_sdk2.FSComponent.Fragment, null, this.props.children);
+      return /* @__PURE__ */ msfssdk.FSComponent.buildComponent(import_msfs_sdk3.FSComponent.Fragment, null, this.props.children);
     }
   };
   var onSetupPage = (ctor, props2, service) => {
+    if (!window.wtg3000gtc.GtcViewKeys.TextDialog)
+      window.wtg3000gtc.GtcViewKeys.TextDialog = "KeyboardDialog";
     const rendered = new ctor(props2).render();
     return new Proxy2({
       children: [
         rendered,
         /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
-          import_msfs_garminsdk2.TouchButton,
+          import_msfs_garminsdk3.TouchButton,
           {
             label: "ACARS",
             class: "gtc-directory-button",
@@ -1806,12 +2081,64 @@
       ]
     });
   };
+  var WeightProxy = class extends import_msfs_sdk3.DisplayComponent {
+    constructor(props2) {
+      super(props2);
+      this.textState = import_msfs_sdk3.Subject.create("LOAD UPLNK");
+      this.canRequest = import_msfs_sdk3.Subject.create(true);
+    }
+    destroy() {
+      if (this.tm) {
+        clearTimeout(this.tm);
+        this.tm = null;
+      }
+    }
+    render() {
+      const isSf50 = AircraftModels_default() === "SF50";
+      if (isSf50) {
+        return null;
+      }
+      return /* @__PURE__ */ msfssdk.FSComponent.buildComponent("div", { class: "wf-row", style: { display: "flex" } }, /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
+        import_msfs_garminsdk3.TouchButton,
+        {
+          label: this.textState,
+          isEnabled: this.canRequest,
+          class: "wf-row wf-bottom-center-button",
+          onPressed: () => {
+            if (!this.canRequest.get()) return;
+            if (this.tm) {
+              clearTimeout(this.tm);
+              this.tm = null;
+            }
+            this.textState.set("UPLNK\nLoading");
+            this.canRequest.set(true);
+            loadFuelAndBalance(this.props.service, this.props.instance).then((res) => {
+              this.textState.set(res ? "UPLNK LOADED" : "LOAD FAILED");
+              this.tm = setTimeout(() => {
+                this.textState.set("LOAD UPLNK");
+                this.tm = null;
+              }, 1e4);
+              this.canRequest.set(true);
+            });
+          }
+        }
+      ), this.props.originalRenderered);
+    }
+  };
+  var onWeightPage = (ctor, props2, service, instance) => {
+    const rendered = new ctor(props2).render();
+    return new WeightProxy({
+      originalRenderered: rendered,
+      service,
+      instance
+    });
+  };
   var onSetupPageLiv2AirCj3 = (ctor, props2, service) => {
     window.wtg3000gtc.GtcViewKeys.TextDialog = "KeyboardDialog";
-    class BtnClass extends import_msfs_sdk2.DisplayComponent {
+    class BtnClass extends import_msfs_sdk3.DisplayComponent {
       render() {
         return /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
-          import_msfs_garminsdk2.TouchButton,
+          import_msfs_garminsdk3.TouchButton,
           {
             label: "ACARS",
             class: "gtc-directory-button",
@@ -1865,6 +2192,18 @@
       const title = SimVar.GetSimVarValue("TITLE", "string");
       if (title.includes("CJ3+"))
         this.onComponentCreating = (ctor, props2) => {
+          if (ctor.name === "GtcWeightFuelPage") {
+            this.weightFuelInstance = new ctor(props2);
+            return this.weightFuelInstance;
+          }
+          if (ctor.name === "GtcTouchButton" && props2.label === "Set Empty\nWeight") {
+            return onWeightPage(
+              ctor,
+              props2,
+              this.binder.gtcService,
+              this.weightFuelInstance
+            );
+          }
           if (ctor.name === "CustomGtcUtilitiesPage") {
             return onSetupPageLiv2AirCj3(
               ctor,
@@ -1877,6 +2216,18 @@
         };
       else
         this.onComponentCreating = (ctor, props2) => {
+          if (ctor.name === "GtcWeightFuelPage") {
+            this.weightFuelInstance = new ctor(props2);
+            return this.weightFuelInstance;
+          }
+          if (ctor.name === "GtcTouchButton" && props2.label === "Set Empty\nWeight") {
+            return onWeightPage(
+              ctor,
+              props2,
+              this.binder.gtcService,
+              this.weightFuelInstance
+            );
+          }
           if (ctor.name === "GtcImgTouchButton" && props2.label === "Crew Profile") {
             return onSetupPage(
               ctor,
@@ -1895,5 +2246,5 @@
       registerViews(ctx, this.binder.fms);
     }
   };
-  import_msfs_sdk3.default.registerPlugin(GarminAcarsPlugin);
+  import_msfs_sdk4.default.registerPlugin(GarminAcarsPlugin);
 })();

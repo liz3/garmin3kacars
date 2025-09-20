@@ -6,6 +6,7 @@ import {
 import {
   onSetupPage,
   onSetupPageLiv2AirCj3,
+  onWeightPage,
   registerViews,
 } from "./Interceptor";
 import "./acars-style.css";
@@ -16,16 +17,31 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
     window.acarsClient = null;
     this.binder = binder;
     binder.gtcService.bus
-        .getSubscriber()
-        .on("acars_instance_create")
-        .handle((v) => {
-          if(window.acarsSide !== "primary") {
-             window.acarsSide = "secondary";
-          }
-       });
+      .getSubscriber()
+      .on("acars_instance_create")
+      .handle((v) => {
+        if (window.acarsSide !== "primary") {
+          window.acarsSide = "secondary";
+        }
+      });
     const title = SimVar.GetSimVarValue("TITLE", "string");
     if (title.includes("CJ3+"))
       this.onComponentCreating = (ctor, props) => {
+      if (ctor.name === "GtcWeightFuelPage") {
+          this.weightFuelInstance = new ctor(props);
+          return this.weightFuelInstance;
+        }
+        if (
+          ctor.name === "GtcTouchButton" &&
+          props.label === "Set Empty\nWeight"
+        ) {
+          return onWeightPage(
+            ctor,
+            props,
+            this.binder.gtcService,
+            this.weightFuelInstance,
+          );
+        }
         if (ctor.name === "CustomGtcUtilitiesPage") {
           return onSetupPageLiv2AirCj3(
             ctor,
@@ -38,6 +54,21 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
       };
     else
       this.onComponentCreating = (ctor, props) => {
+        if (ctor.name === "GtcWeightFuelPage") {
+          this.weightFuelInstance = new ctor(props);
+          return this.weightFuelInstance;
+        }
+        if (
+          ctor.name === "GtcTouchButton" &&
+          props.label === "Set Empty\nWeight"
+        ) {
+          return onWeightPage(
+            ctor,
+            props,
+            this.binder.gtcService,
+            this.weightFuelInstance,
+          );
+        }
         if (
           ctor.name === "GtcImgTouchButton" &&
           props.label === "Crew Profile"

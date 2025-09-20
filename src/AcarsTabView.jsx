@@ -469,7 +469,7 @@ class AcarsMessagePage extends GtcView {
     this.messageListRef = FSComponent.createRef();
     this.from = Subject.create("");
     this.content = Subject.create("");
-    this.itemHeight = Subject.create(0)
+    this.itemHeight = Subject.create(0);
     // i cant anymore. this framework is so terrible
     this.option1 = Subject.create(null);
     this.option2 = Subject.create(null);
@@ -478,8 +478,7 @@ class AcarsMessagePage extends GtcView {
     this.sizeInterval = setInterval(() => {
       const elem = document.getElementById("message-content-container");
       const height = elem.getBoundingClientRect().height + 30;
-      if(this.itemHeight.get() !== height)
-        this.itemHeight.set(height);
+      if (this.itemHeight.get() !== height) this.itemHeight.set(height);
     }, 250);
   }
 
@@ -491,6 +490,15 @@ class AcarsMessagePage extends GtcView {
     if (message.options && !message.respondSend) {
       const arr = [this.option1, this.option2, this.option3];
       message.options.forEach((v, i) => arr[i].set(v));
+      this.bus.getPublisher().pub(
+        "cas_deactivate_alert",
+        {
+          key: { uuid: "acars-msg" },
+          priority: AnnunciationType.Advisory,
+        },
+        true,
+        false,
+      );
     } else {
       if (!message.viewed && message.type !== "send") {
         this.bus.getPublisher().pub(
@@ -519,8 +527,7 @@ class AcarsMessagePage extends GtcView {
   destroy() {
     const value = this.messageListRef.getOrDefault();
     if (value) value.destroy();
-    if(this.sizeInterval)
-      clearInterval(this.sizeInterval);
+    if (this.sizeInterval) clearInterval(this.sizeInterval);
     super.destroy();
   }
   onAfterRender(thisNode) {
@@ -581,11 +588,10 @@ class AcarsMessagePage extends GtcView {
     const sidebarState = Subject.create(null);
     return (
       <div class={"acars-message-page"}>
-             <div class={"header"}>
-            <span>{this.from}</span>
-          </div>
+        <div class={"header"}>
+          <span>{this.from}</span>
+        </div>
         <GtcList
-
           class={"content-list"}
           ref={this.messageListRef}
           listItemSpacingPx={1}
@@ -593,14 +599,15 @@ class AcarsMessagePage extends GtcView {
           sidebarState={sidebarState}
           bus={this.bus}
           listItemHeightPx={this.itemHeight}
-          heightPx={this.props.gtcService.orientation === "horizontal" ? 380 : 260}
+          heightPx={
+            this.props.gtcService.orientation === "horizontal" ? 380 : 260
+          }
         >
-        <GtcListItem >
-          <div class={"content"}>
-            <span id="message-content-container">{this.content}</span>
-          </div>
-        </GtcListItem>
-
+          <GtcListItem>
+            <div class={"content"}>
+              <span id="message-content-container">{this.content}</span>
+            </div>
+          </GtcListItem>
         </GtcList>
         <div class={"options"}>
           {this.renderOptionsItem(this.option1)}
@@ -837,6 +844,9 @@ class AcarsSettingsPopUp extends GtcView {
     this.hoppieValue = Subject.create(
       this.props.settingsManager.getSetting("acars_code").get(),
     );
+    this.simbriefId = Subject.create(
+      this.props.settingsManager.getSetting("g3ka_simbrief_id").get(),
+    );
   }
   destroy() {
     const value = this.listRef.getOrDefault();
@@ -883,6 +893,33 @@ class AcarsSettingsPopUp extends GtcView {
                 .set(iff.value);
               SetStoredData("hoppie_code", iff.value);
               iff.remove();
+            }}
+          />
+        </GtcListItem>
+        <GtcListItem>
+          <GtcValueTouchButton
+            class={"acars-settings-button"}
+            label={"Simbrief Id"}
+            renderValue={(v) => (v && v.length ? v : "----")}
+            state={this.simbriefId}
+            isInList={true}
+            onPressed={async () => {
+              const result = await this.props.gtcService
+                .openPopup(GtcViewKeys.TextDialog, "normal", "hide")
+                .ref.request({
+                  label: "Simbrief Id",
+                  allowSpaces: false,
+                  maxLength: 10,
+                  initialValue: this.simbriefId.get(),
+                  initialInputText: this.simbriefId.get(),
+                });
+              if (!result.wasCancelled) {
+                this.simbriefId.set(result.payload);
+                this.props.settingsManager
+                  .getSetting("g3ka_simbrief_id")
+                  .set(result.payload);
+                SetStoredData("g3ka_simbrief_id", result.payload);
+              }
             }}
           />
         </GtcListItem>
@@ -947,10 +984,16 @@ class AcarsTabView extends GtcView {
         defaultValue: GetStoredData("hoppie_code"),
         name: "acars_code",
       },
+      {
+        defaultValue: GetStoredData("g3ka_simbrief_id"),
+        name: "g3ka_simbrief_id",
+      },
     ]);
     const isPrimary = window.acarsSide !== "secondary";
     this.canCreate = Subject.create(false);
     this.client = Subject.create(null);
+    this.distance = Subject.create(null);
+    this.groundSpeed = Subject.create(null);
     if (isPrimary) {
       window.acarsSide = "primary";
       this.props.gtcService.bus
@@ -960,6 +1003,18 @@ class AcarsTabView extends GtcView {
     this.latestMessage = Subject.create(null);
     const now = new Date();
     this.depTime = Subject.create(now.getUTCHours() * 60 + now.getUTCMinutes());
+    this.props.gtcService.bus
+      .getSubscriber()
+      .on("lnavdata_waypoint_distance")
+      .handle((v) => {
+        this.distance.set(v);
+      });
+    this.props.gtcService.bus
+      .getSubscriber()
+      .on("ground_speed")
+      .handle((v) => {
+        this.groundSpeed.set(v);
+      });
     if (isPrimary) {
       this.props.gtcService.bus
         .getSubscriber()
@@ -1218,7 +1273,7 @@ class AcarsTabView extends GtcView {
             allowSpaces: false,
             maxLength: 20,
             type: GtcViewKeys.TextDialog,
-            displayFallback: "----",
+            displayFallback: "------",
             validate: (v) => v.length > 0,
           },
           {
@@ -1253,6 +1308,122 @@ class AcarsTabView extends GtcView {
             type: GtcViewKeys.TextDialog,
             displayFallback: ".--",
             validate: (v) => v.length && !Number.isNaN(Number.parseInt(v)),
+          },
+        ],
+      },
+      {
+        title: "Position Report",
+        onSend: async (d) => {
+          const client = this.client.get();
+          if (!client) return false;
+          return client.sendPositionReport(
+            d.FL,
+            d.Mach,
+            d["Waypoint"],
+            d["Waypoint ATA"],
+            d["Following Waypoint"],
+            d["Following ETA"],
+            d["Next Waypoint"],
+          );
+        },
+        fields: [
+          {
+            name: "Mach",
+            allowSpaces: false,
+            maxLength: 4,
+            type: GtcViewKeys.TextDialog,
+            displayFallback: "-----",
+            validate: (v) => v.length && !Number.isNaN(Number.parseFloat(v)),
+            initialValue: () =>
+              `${SimVar.GetSimVarValue("AIRSPEED MACH", "mach").toFixed(1)}`,
+          },
+          {
+            name: "FL",
+            allowSpaces: false,
+            maxLength: 5,
+            type: GtcViewKeys.TextDialog,
+            displayFallback: "---",
+            transform: (v) => v.replace("FL", ""),
+            validate: (v) => v.length && !Number.isNaN(Number.parseFloat(v)),
+            inititalValue: () => {
+              const v = SimVar.GetSimVarValue("INDICATED ALTITUDE", "feet");
+              return (v / 100).toFixed(0);
+            },
+          },
+          {
+            name: "Waypoint",
+            allowSpaces: false,
+            maxLength: 10,
+            type: GtcViewKeys.TextDialog,
+            displayFallback: "-----",
+            validate: (v) => v.length,
+            initialValue: () => {
+              const fp = this.props.fms.getPrimaryFlightPlan();
+              const leg = fp.getLeg(fp.activeLateralLeg);
+              if (leg) return leg.name;
+            },
+          },
+          {
+            name: "Waypoint ATA",
+            allowSpaces: false,
+            maxLength: 10,
+            type: GtcViewKeys.TextDialog,
+            displayFallback: "-----",
+            validate: (v) => v.length,
+            initialValue: () => {
+              const time = new Date();
+              const rem = 60 * (this.distance.get() / this.groundSpeed.get());
+              time.setUTCHours(time.getUTCHours() + Math.floor(rem / 60));
+              time.setUTCMinutes(time.getUTCMinutes() + Math.floor(rem % 60));
+              return `${time.getUTCHours().toString().padStart(2, "0")}${time.getUTCMinutes().toString().padStart(2, "0")}`;
+            },
+          },
+          {
+            name: "Following Waypoint",
+            allowSpaces: false,
+            maxLength: 10,
+            type: GtcViewKeys.TextDialog,
+            displayFallback: "-----",
+            validate: (v) => v.length,
+            initialValue: () => {
+              const fp = this.props.fms.getPrimaryFlightPlan();
+              const leg = fp.getLeg(fp.activeLateralLeg + 1);
+              if (leg) return leg.name;
+            },
+          },
+          {
+            name: "Following ETA",
+            allowSpaces: false,
+            maxLength: 10,
+            type: GtcViewKeys.TextDialog,
+            displayFallback: "-----",
+            validate: (v) => v.length,
+            initialValue: () => {
+              const fp = this.props.fms.getPrimaryFlightPlan();
+              const leg = fp.getLeg(fp.activeLateralLeg + 1);
+              if (!leg) return null;
+              const time = new Date();
+              const rem =
+                60 *
+                ((this.distance.get() + leg.calculated.distance / 1852) /
+                  this.groundSpeed.get());
+              time.setUTCHours(time.getUTCHours() + Math.floor(rem / 60));
+              time.setUTCMinutes(time.getUTCMinutes() + Math.floor(rem % 60));
+              return `${time.getUTCHours().toString().padStart(2, "0")}${time.getUTCMinutes().toString().padStart(2, "0")}`;
+            },
+          },
+          {
+            name: "Next Waypoint",
+            allowSpaces: false,
+            maxLength: 10,
+            type: GtcViewKeys.TextDialog,
+            displayFallback: "-----",
+            validate: (v) => v.length,
+            initialValue: () => {
+              const fp = this.props.fms.getPrimaryFlightPlan();
+              const leg = fp.getLeg(fp.activeLateralLeg + 2);
+              if (leg) return leg.name;
+            },
           },
         ],
       },
