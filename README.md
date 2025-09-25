@@ -11,3 +11,5 @@ After setting a simbrief id on Weight initialization you can load from simbrief.
 * Liv2air Cj3+
 * Cirrus Vision Jet(2024 only, Hoppie ACARS only)
 
+# Download
+Download [Latest Community Package](/releases/latest)
