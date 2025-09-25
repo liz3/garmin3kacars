@@ -118,15 +118,22 @@
     if (map[c]) return [...map[c], "STANDBY"];
     return null;
   };
+  var forwardStateUpdate = (state) => {
+    if (state._stationCallback)
+      state._stationCallback({
+        active: state.active_station,
+        pending: state.pending_station
+      });
+  };
   var messageStateUpdate = (state, message2) => {
     if (message2.type === "cpdlc" && message2.content === "LOGON ACCEPTED" && state.pending_station) {
-      if (state._stationCallback) state._stationCallback(message2.from);
       state.active_station = message2.from;
       state.pending_station = null;
+      forwardStateUpdate(state);
     } else if (message2.type === "cpdlc" && message2.content === "LOGOFF" && state.active_station) {
-      if (state._stationCallback) state._stationCallback(null);
       state.active_station = null;
       state.pending_station = null;
+      forwardStateUpdate(state);
     }
   };
   var cpdlcStringBuilder = (state, request, replyId = "") => {
@@ -144,6 +151,15 @@
             for (const message2 of parseMessages(raw)) {
               if (message2.from === state.callsign && message2.type === "inforeq") {
                 continue;
+              }
+              if (state.active_station && message2.from === state.active_station && message2.content.startsWith("HANDOVER")) {
+                state.active_station = null;
+                const station = message2.content.split(" ")[1];
+                if (station) {
+                  const corrected = station.trim().replace("@", "");
+                  state.sendLogonRequest(corrected);
+                  return;
+                }
               }
               message2._id = state.idc++;
               messageStateUpdate(state, message2);
@@ -260,6 +276,7 @@ ${content}`,
         "cpdlc"
       );
       if (!response.ok) return false;
+      forwardStateUpdate(state);
       const text = await response.text();
       return text.startsWith("ok");
     };
@@ -267,7 +284,6 @@ ${content}`,
       if (!state.active_station) return;
       const station = state.active_station;
       state.active_station = null;
-      if (state._stationCallback) state._stationCallback(null);
       const response = await sendAcarsMessage(
         state,
         station,
@@ -276,6 +292,7 @@ ${content}`,
       );
       if (!response.ok) return false;
       const text = await response.text();
+      forwardStateUpdate(state);
       return text.startsWith("ok");
     };
     state.sendOceanicClearance = async (cs, to, entryPoint, eta, level, mach, freeText) => {

@@ -64,23 +64,31 @@ const responseOptions = (c) => {
   if (map[c]) return [...map[c], "STANDBY"];
   return null;
 };
+
+const forwardStateUpdate = (state) => {
+  if (state._stationCallback)
+    state._stationCallback({
+      active: state.active_station,
+      pending: state.pending_station,
+    });
+};
 export const messageStateUpdate = (state, message) => {
   if (
     message.type === "cpdlc" &&
     message.content === "LOGON ACCEPTED" &&
     state.pending_station
   ) {
-    if (state._stationCallback) state._stationCallback(message.from);
     state.active_station = message.from;
     state.pending_station = null;
+    forwardStateUpdate(state);
   } else if (
     message.type === "cpdlc" &&
     message.content === "LOGOFF" &&
     state.active_station
   ) {
-    if (state._stationCallback) state._stationCallback(null);
     state.active_station = null;
     state.pending_station = null;
+    forwardStateUpdate(state);
   }
 };
 const cpdlcStringBuilder = (state, request, replyId = "") => {
@@ -98,6 +106,20 @@ const poll = (state) => {
           for (const message of parseMessages(raw)) {
             if (message.from === state.callsign && message.type === "inforeq") {
               continue;
+            }
+            if (
+              state.active_station &&
+              message.from === state.active_station &&
+              message.content.startsWith("HANDOVER")
+            ) {
+              state.active_station = null;
+              const station = message.content.split(" ")[1];
+              if (station) {
+                const corrected = station.trim().replace("@", "");
+                state.sendLogonRequest(corrected);
+                 return;
+              }
+
             }
             message._id = state.idc++;
             messageStateUpdate(state, message);
@@ -229,6 +251,7 @@ export const createClient = (code, callsign, aicraftType, messageCallback) => {
       "cpdlc",
     );
     if (!response.ok) return false;
+    forwardStateUpdate(state);
     const text = await response.text();
     return text.startsWith("ok");
   };
@@ -237,7 +260,6 @@ export const createClient = (code, callsign, aicraftType, messageCallback) => {
     if (!state.active_station) return;
     const station = state.active_station;
     state.active_station = null;
-    if (state._stationCallback) state._stationCallback(null);
     const response = await sendAcarsMessage(
       state,
       station,
@@ -246,7 +268,7 @@ export const createClient = (code, callsign, aicraftType, messageCallback) => {
     );
     if (!response.ok) return false;
     const text = await response.text();
-
+    forwardStateUpdate(state);
     return text.startsWith("ok");
   };
 
