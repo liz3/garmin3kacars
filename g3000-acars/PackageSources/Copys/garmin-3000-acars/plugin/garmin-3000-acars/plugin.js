@@ -186,10 +186,14 @@
               state._callback(message2);
             }
             poll(state);
+          }).catch((err) => {
+            poll(state);
           });
         } else {
           poll(state);
         }
+      }).catch((err) => {
+        poll(state);
       });
     }, 1e4);
   };

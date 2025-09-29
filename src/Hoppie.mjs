@@ -146,10 +146,14 @@ const poll = (state) => {
             state._callback(message);
           }
           poll(state);
-        });
+        }).catch((err) => {
+      poll(state);
+    });
       } else {
         poll(state);
       }
+    }).catch((err) => {
+      poll(state);
     });
   }, 10000);
 };
