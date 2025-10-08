@@ -1,11 +1,16 @@
 const models = {
   "Asobo Cessna Citation Longitude": "C700",
+  "Cessna Longitude Asobo": "C700",
   "Microsoft Vision Jet": "SF50",
   "Asobo TBM 930": "TMB9",
   "Citation CJ3+": "C25B",
 };
 const weights = {
   "Asobo Cessna Citation Longitude": {
+    pax: [3, 5, 4, 6, 7, 9, 8, 10],
+    cargo: [11, 12],
+  },
+  "Cessna Longitude Asobo": {
     pax: [3, 5, 4, 6, 7, 9, 8, 10],
     cargo: [11, 12],
   },
