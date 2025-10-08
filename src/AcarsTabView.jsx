@@ -844,6 +844,9 @@ class AcarsSettingsPopUp extends GtcView {
     this.hoppieValue = Subject.create(
       this.props.settingsManager.getSetting("acars_code").get(),
     );
+    this.networkValue = Subject.create(
+      this.props.settingsManager.getSetting("network").get(),
+    );
     this.simbriefId = Subject.create(
       this.props.settingsManager.getSetting("g3ka_simbrief_id").get(),
     );
@@ -923,6 +926,33 @@ class AcarsSettingsPopUp extends GtcView {
             }}
           />
         </GtcListItem>
+        <GtcListItem>
+          <GtcListSelectTouchButton
+            isInList={true}
+            class={"acars-settings-button"}
+            gtcService={this.props.gtcService}
+            listDialogKey={GtcViewKeys.ListDialog1}
+            state={this.networkValue}
+            label={"Network"}
+            onSelected={(v) => {
+              this.networkValue.set(v);
+              this.props.settingsManager
+                .getSetting("network")
+                .set(v);
+              SetStoredData("g3ka_network", v);
+            }}
+            listParams={{
+              title: "Network",
+              inputData: [
+                { value: "hoppie", labelRenderer: (v) => "Hoppie" },
+                {
+                  value: "sayintentions",
+                  labelRenderer: (v) => "Sayintentions",
+                },
+              ],
+            }}
+          />
+        </GtcListItem>
       </GtcList>
     );
   }
@@ -987,6 +1017,10 @@ class AcarsTabView extends GtcView {
       {
         defaultValue: GetStoredData("g3ka_simbrief_id"),
         name: "g3ka_simbrief_id",
+      },
+      {
+        defaultValue: GetStoredData("g3ka_network") || "hoppie",
+        name: "network",
       },
     ]);
     const isPrimary = window.acarsSide !== "secondary";
@@ -1062,6 +1096,24 @@ class AcarsTabView extends GtcView {
             message.status.set("Closed");
           }
         });
+      this.settingsManager.getSetting("network").sub((v) => {
+        const oldClient = this.client.get();
+        if (!oldClient) {
+          return;
+        }
+        oldClient.dispose();
+        const hoppieCode = this.settingsManager.getSetting("acars_code").get();
+
+        const client = createClient(
+          hoppieCode,
+          oldClient.callsign,
+          getAircraftIcao(),
+          this.onMessage.bind(this),
+          this.settingsManager.getSetting("network").get(),
+        );
+        this.client.set(client);
+        this.canCreate.set(true);
+      });
       props.gtcService.bus
         .getSubscriber()
         .on("acars_message_request")
@@ -1088,6 +1140,7 @@ class AcarsTabView extends GtcView {
               v,
               getAircraftIcao(),
               this.onMessage.bind(this),
+              this.settingsManager.getSetting("network").get(),
             );
             this.client.set(client);
             props.gtcService.bus.getPublisher().pub(

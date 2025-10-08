@@ -99,12 +99,9 @@
       ["to", receiver],
       ["packet", payload]
     ]);
-    return fetch(
-      `https://www.hoppie.nl/acars/system/connect.html?${params.toString()}`,
-      {
-        method: "GET"
-      }
-    );
+    return fetch(`${state._service_url}?${params.toString()}`, {
+      method: "GET"
+    });
   };
   var responseOptions = (c) => {
     const map = {
@@ -214,7 +211,11 @@
     minutes = minutes.toString().padStart(2, "0");
     return `${hours}:${minutes}`;
   };
-  var createClient = (code, callsign, aicraftType, messageCallback) => {
+  var SERVICES = {
+    hoppie: "https://www.hoppie.nl/acars/system/connect.html",
+    sayintentions: " https://acars.sayintentions.ai/acars/system/connect.html"
+  };
+  var createClient = (code, callsign, aicraftType, messageCallback, service = "hoppie") => {
     const state = {
       code,
       callsign,
@@ -224,7 +225,8 @@
       _min_count: 0,
       aircraft: aicraftType,
       idc: 0,
-      message_stack: {}
+      message_stack: {},
+      _service_url: SERVICES[service]
     };
     state.dispose = () => {
       if (state._interval) clearInterval(state._interval);
@@ -1105,6 +1107,9 @@ ${content}`,
       this.hoppieValue = import_msfs_sdk.Subject.create(
         this.props.settingsManager.getSetting("acars_code").get()
       );
+      this.networkValue = import_msfs_sdk.Subject.create(
+        this.props.settingsManager.getSetting("network").get()
+      );
       this.simbriefId = import_msfs_sdk.Subject.create(
         this.props.settingsManager.getSetting("g3ka_simbrief_id").get()
       );
@@ -1177,6 +1182,32 @@ ${content}`,
               }
             }
           }
+        )),
+        /* @__PURE__ */ msfssdk.FSComponent.buildComponent(import_msfs_wtg3000_gtc.GtcListItem, null, /* @__PURE__ */ msfssdk.FSComponent.buildComponent(
+          import_msfs_wtg3000_gtc.GtcListSelectTouchButton,
+          {
+            isInList: true,
+            class: "acars-settings-button",
+            gtcService: this.props.gtcService,
+            listDialogKey: import_msfs_wtg3000_gtc.GtcViewKeys.ListDialog1,
+            state: this.networkValue,
+            label: "Network",
+            onSelected: (v) => {
+              this.networkValue.set(v);
+              this.props.settingsManager.getSetting("network").set(v);
+              SetStoredData("g3ka_network", v);
+            },
+            listParams: {
+              title: "Network",
+              inputData: [
+                { value: "hoppie", labelRenderer: (v) => "Hoppie" },
+                {
+                  value: "sayintentions",
+                  labelRenderer: (v) => "Sayintentions"
+                }
+              ]
+            }
+          }
         ))
       );
     }
@@ -1234,6 +1265,10 @@ ${content}`,
         {
           defaultValue: GetStoredData("g3ka_simbrief_id"),
           name: "g3ka_simbrief_id"
+        },
+        {
+          defaultValue: GetStoredData("g3ka_network") || "hoppie",
+          name: "network"
         }
       ]);
       const isPrimary = window.acarsSide !== "secondary";
@@ -1287,6 +1322,23 @@ ${content}`,
             message2.status.set("Closed");
           }
         });
+        this.settingsManager.getSetting("network").sub((v) => {
+          const oldClient = this.client.get();
+          if (!oldClient) {
+            return;
+          }
+          oldClient.dispose();
+          const hoppieCode = this.settingsManager.getSetting("acars_code").get();
+          const client = createClient(
+            hoppieCode,
+            oldClient.callsign,
+            AircraftModels_default(),
+            this.onMessage.bind(this),
+            this.settingsManager.getSetting("network").get()
+          );
+          this.client.set(client);
+          this.canCreate.set(true);
+        });
         props2.gtcService.bus.getSubscriber().on("acars_message_request").handle((v) => {
           const state = this.client.get();
           state[v.key].apply(this, Object.values(v.arguments || {}));
@@ -1304,7 +1356,8 @@ ${content}`,
               hoppieCode,
               v,
               AircraftModels_default(),
-              this.onMessage.bind(this)
+              this.onMessage.bind(this),
+              this.settingsManager.getSetting("network").get()
             );
             this.client.set(client);
             props2.gtcService.bus.getPublisher().pub(
