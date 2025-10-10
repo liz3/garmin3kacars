@@ -155,7 +155,7 @@
                 if (station) {
                   const corrected = station.trim().replace("@", "");
                   state.sendLogonRequest(corrected);
-                  return;
+                  continue;
                 }
               }
               message2._id = state.idc++;
@@ -307,7 +307,7 @@ ${content}`,
         to,
         addMessage(
           state,
-          `REQUEST OCEANIC CLEARANCE ${cs} ${state.aircraft} ESTIMATING ${entryPoint} AT ${eta}Z FLIGHT LEVEL ${lvl} REQUEST MACH ${mach}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+          `REQUEST OCEANIC CLEARANCE ${cs} ${state.aircraft} ESTIMATING ${entryPoint} AT ${eta}Z FLIGHT LEVEL ${level} REQUEST MACH ${mach}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
         ),
         "telex"
       );
@@ -329,7 +329,7 @@ ${content}`,
       const text = await response.text();
       return text.startsWith("ok");
     };
-    state.sendLevelChange = async (lvl2, climb, reason, freeText) => {
+    state.sendLevelChange = async (lvl, climb, reason, freeText) => {
       const response = await sendAcarsMessage(
         state,
         state.active_station,
@@ -337,7 +337,7 @@ ${content}`,
           state,
           addMessage(
             state,
-            `REQUEST ${climb ? "CLIMB" : "DESCEND"} TO FL${lvl2} DUE TO ${{ weather: "weather", performance: "aircraft performance" }[reason.toLowerCase()]}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
+            `REQUEST ${climb ? "CLIMB" : "DESCEND"} TO FL${lvl} DUE TO ${{ weather: "weather", performance: "aircraft performance" }[reason.toLowerCase()]}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase()
           )
         ),
         "cpdlc"

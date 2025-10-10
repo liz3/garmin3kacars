@@ -123,7 +123,7 @@ const poll = (state) => {
                   if (station) {
                     const corrected = station.trim().replace("@", "");
                     state.sendLogonRequest(corrected);
-                    return;
+                    continue;
                   }
                 }
                 message._id = state.idc++;
@@ -313,7 +313,7 @@ export const createClient = (
       to,
       addMessage(
         state,
-        `REQUEST OCEANIC CLEARANCE ${cs} ${state.aircraft} ESTIMATING ${entryPoint} AT ${eta}Z FLIGHT LEVEL ${lvl} REQUEST MACH ${mach}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase(),
+        `REQUEST OCEANIC CLEARANCE ${cs} ${state.aircraft} ESTIMATING ${entryPoint} AT ${eta}Z FLIGHT LEVEL ${level} REQUEST MACH ${mach}${freeText.length ? ` ${freeText}` : ""}`.toUpperCase(),
       ),
       "telex",
     );
