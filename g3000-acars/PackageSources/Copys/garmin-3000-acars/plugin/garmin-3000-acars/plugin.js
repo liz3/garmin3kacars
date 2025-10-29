@@ -92,6 +92,7 @@
     return messages;
   };
   var sendAcarsMessage = async (state, receiver, payload, messageType) => {
+    
     const params = new URLSearchParams([
       ["logon", state.code],
       ["from", state.callsign],
@@ -99,6 +100,12 @@
       ["to", receiver],
       ["packet", payload]
     ]);
+
+    // omit logon code when using BeyondATC as network
+    if (GetStoredData("g3ka_network") === "beyondatc") {
+      params.set("logon", "");
+    }
+    
     return fetch(`${state._service_url}?${params.toString()}`, {
       method: "GET"
     });
@@ -213,7 +220,8 @@
   };
   var SERVICES = {
     hoppie: "https://www.hoppie.nl/acars/system/connect.html",
-    sayintentions: " https://acars.sayintentions.ai/acars/system/connect.html"
+    sayintentions: " https://acars.sayintentions.ai/acars/system/connect.html",
+    beyondatc: "http://localhost:57698/acars/system/connect.html"
   };
   var createClient = (code, callsign, aicraftType, messageCallback, service = "hoppie") => {
     const state = {
@@ -386,26 +394,21 @@ ${content}`,
 
   // src/AircraftModels.mjs
   var models = {
-    "Asobo Cessna Citation Longitude": "C700",
-    "Cessna Longitude Asobo": "C700",
-    "Microsoft Vision Jet": "SF50",
-    "Asobo TBM 930": "TMB9",
-    "Citation CJ3+": "C25B"
+    "Longitude": "C700",
+    "Vision Jet": "SF50",
+    "TBM 930": "TMB9",
+    "CJ3+": "C25B"
   };
   var weights = {
-    "Asobo Cessna Citation Longitude": {
+    "Longitude": {
       pax: [3, 5, 4, 6, 7, 9, 8, 10],
       cargo: [11, 12]
     },
-    "Cessna Longitude Asobo": {
-      pax: [3, 5, 4, 6, 7, 9, 8, 10],
-      cargo: [11, 12]
-    },
-    "Asobo TBM 930": {
+    "TBM 930": {
       pax: [2, 3, 4, 5, 6],
       cargo: [7, 8]
     },
-    "Citation CJ3+": {
+    "CJ3+": {
       pax: [1, 2, 3, 4, 5, 6, 7, 8.9],
       cargo: [10, 11]
     }
@@ -1209,6 +1212,10 @@ ${content}`,
                 {
                   value: "sayintentions",
                   labelRenderer: (v) => "Sayintentions"
+                },
+                {
+                  value: "beyondatc",
+                  labelRenderer: (v) => "BeyondATC"
                 }
               ]
             }
