@@ -223,7 +223,7 @@ class StatusTab extends DisplayComponent {
       if (!client.active_station) client.sendLogonRequest(this.facility.get());
       else client.sendLogoffRequest();
     } else {
-      props.gtcService.bus.getPublisher().pub(
+      this.props.gtcService.bus.getPublisher().pub(
         "acars_message_request",
         {
           key: !client.active_station
@@ -235,6 +235,7 @@ class StatusTab extends DisplayComponent {
         false,
       );
     }
+    this.facility.set("");
   }
   render() {
     const sidebarState = Subject.create(null);
@@ -467,19 +468,31 @@ class AcarsMessagePage extends GtcView {
     this.message = Subject.create(null);
     this.canReply = Subject.create(true);
     this.messageListRef = FSComponent.createRef();
+    this.contentRef = FSComponent.createRef();
     this.from = Subject.create("");
     this.content = Subject.create("");
     this.itemHeight = Subject.create(0);
-    // i cant anymore. this framework is so terrible
     this.option1 = Subject.create(null);
     this.option2 = Subject.create(null);
     this.option3 = Subject.create(null);
+    this.sizeInterval = null;
+  }
 
+  startSizeMonitor() {
+    if (this.sizeInterval) return;
     this.sizeInterval = setInterval(() => {
-      const elem = document.getElementById("message-content-container");
+      const elem = this.contentRef.getOrDefault();
+      if (!elem) return;
       const height = elem.getBoundingClientRect().height + 30;
       if (this.itemHeight.get() !== height) this.itemHeight.set(height);
     }, 250);
+  }
+
+  stopSizeMonitor() {
+    if (this.sizeInterval) {
+      clearInterval(this.sizeInterval);
+      this.sizeInterval = null;
+    }
   }
 
   openMessage(message) {
@@ -524,15 +537,25 @@ class AcarsMessagePage extends GtcView {
 
     message.viewed = true;
   }
+  onResume() {
+    this.startSizeMonitor();
+  }
+
+  onPause() {
+    this.stopSizeMonitor();
+  }
+
   destroy() {
+    this.stopSizeMonitor();
     const value = this.messageListRef.getOrDefault();
     if (value) value.destroy();
-    if (this.sizeInterval) clearInterval(this.sizeInterval);
     super.destroy();
   }
+
   onAfterRender(thisNode) {
     this.thisNode = thisNode;
     this._title.set("CPDLC Thread");
+    this.startSizeMonitor();
   }
   renderOptionsItem(option) {
     return (
@@ -605,7 +628,7 @@ class AcarsMessagePage extends GtcView {
         >
           <GtcListItem>
             <div class={"content"}>
-              <span id="message-content-container">{this.content}</span>
+              <span ref={this.contentRef}>{this.content}</span>
             </div>
           </GtcListItem>
         </GtcList>
@@ -944,11 +967,9 @@ class AcarsSettingsPopUp extends GtcView {
             listParams={{
               title: "Network",
               inputData: [
-                { value: "hoppie", labelRenderer: (v) => "Hoppie" },
-                {
-                  value: "sayintentions",
-                  labelRenderer: (v) => "Sayintentions",
-                },
+                { value: "hoppie", labelRenderer: () => "Hoppie" },
+                { value: "sayintentions", labelRenderer: () => "SayIntentions" },
+                { value: "beyondatc", labelRenderer: () => "BeyondATC" },
               ],
             }}
           />
@@ -1009,6 +1030,7 @@ class AcarsTabView extends GtcView {
     super(props);
 
     this.tabsRef = FSComponent.createRef();
+    this.subscriptions = [];
     this.settingsManager = new DefaultUserSettingManager(this.bus, [
       {
         defaultValue: GetStoredData("hoppie_code"),
@@ -1024,6 +1046,7 @@ class AcarsTabView extends GtcView {
       },
     ]);
     const isPrimary = window.acarsSide !== "secondary";
+    this.isPrimary = isPrimary;
     this.canCreate = Subject.create(false);
     this.client = Subject.create(null);
     this.distance = Subject.create(null);
@@ -1037,32 +1060,38 @@ class AcarsTabView extends GtcView {
     this.latestMessage = Subject.create(null);
     const now = new Date();
     this.depTime = Subject.create(now.getUTCHours() * 60 + now.getUTCMinutes());
-    this.props.gtcService.bus
-      .getSubscriber()
-      .on("lnavdata_waypoint_distance")
-      .handle((v) => {
-        this.distance.set(v);
-      });
-    this.props.gtcService.bus
-      .getSubscriber()
-      .on("ground_speed")
-      .handle((v) => {
-        this.groundSpeed.set(v);
-      });
-    if (isPrimary) {
+    this.subscriptions.push(
       this.props.gtcService.bus
         .getSubscriber()
-        .on("acars_state_request")
-        .handle((e) => {
-          this.props.gtcService.bus
-            .getPublisher()
-            .pub(
-              "acars_state_response",
-              { client: this.client.get() },
-              true,
-              false,
-            );
-        });
+        .on("lnavdata_waypoint_distance")
+        .handle((v) => {
+          this.distance.set(v);
+        })
+    );
+    this.subscriptions.push(
+      this.props.gtcService.bus
+        .getSubscriber()
+        .on("ground_speed")
+        .handle((v) => {
+          this.groundSpeed.set(v);
+        })
+    );
+    if (isPrimary) {
+      this.subscriptions.push(
+        this.props.gtcService.bus
+          .getSubscriber()
+          .on("acars_state_request")
+          .handle((e) => {
+            this.props.gtcService.bus
+              .getPublisher()
+              .pub(
+                "acars_state_response",
+                { client: this.client.get() },
+                true,
+                false,
+              );
+          })
+      );
     } else {
       const sub = this.props.gtcService.bus
         .getSubscriber()
@@ -1073,137 +1102,150 @@ class AcarsTabView extends GtcView {
               label: "Flight ID",
               value: e.client.callsign,
             });
-            props.gtcService.bus.getPublisher().pub("acars_new_client", {
+            this.props.gtcService.bus.getPublisher().pub("acars_new_client", {
               callsign: e.client.callsign,
             });
           }
-
           sub.destroy();
         });
+      this.subscriptions.push(sub);
       this.props.gtcService.bus
         .getPublisher()
         .pub("acars_state_request", null, true, false);
     }
     if (isPrimary) {
-      props.gtcService.bus
-        .getSubscriber()
-        .on("acars_message_ack")
-        .handle((v) => {
-          const state = this.client.get();
-          const message = state.message_stack[v.id];
-          if (message) {
-            message.response(v.e);
-            message.status.set("Closed");
-          }
-        });
-      this.settingsManager.getSetting("network").sub((v) => {
-        const oldClient = this.client.get();
-        if (!oldClient) {
-          return;
-        }
-        oldClient.dispose();
-        const hoppieCode = this.settingsManager.getSetting("acars_code").get();
-
-        const client = createClient(
-          hoppieCode,
-          oldClient.callsign,
-          getAircraftIcao(),
-          this.onMessage.bind(this),
-          this.settingsManager.getSetting("network").get(),
-        );
-        this.client.set(client);
-        this.canCreate.set(true);
-      });
-      props.gtcService.bus
-        .getSubscriber()
-        .on("acars_message_request")
-        .handle((v) => {
-          const state = this.client.get();
-          state[v.key].apply(this, Object.values(v.arguments || {}));
-        });
-      props.gtcService.bus
-        .getSubscriber()
-        .on("acars_status_param")
-        .handle((imp) => {
-          if (imp.label !== "Flight ID") return;
-          const v = imp.value;
+      this.subscriptions.push(
+        this.props.gtcService.bus
+          .getSubscriber()
+          .on("acars_message_ack")
+          .handle((v) => {
+            const state = this.client.get();
+            const message = state.message_stack[v.id];
+            if (message) {
+              message.response(v.e);
+              message.status.set("Closed");
+            }
+          })
+      );
+      this.subscriptions.push(
+        this.settingsManager.getSetting("network").sub((v) => {
           const oldClient = this.client.get();
-          if (oldClient) {
-            oldClient.dispose();
-          }
-          const hoppieCode = this.settingsManager
-            .getSetting("acars_code")
-            .get();
-          if (v && v.length && hoppieCode) {
-            const client = createClient(
-              hoppieCode,
-              v,
-              getAircraftIcao(),
-              this.onMessage.bind(this),
-              this.settingsManager.getSetting("network").get(),
-            );
-            this.client.set(client);
-            props.gtcService.bus.getPublisher().pub(
-              "acars_new_client",
-              {
-                callsign: client.callsign,
-              },
-              true,
-              false,
-            );
-            this.canCreate.set(true);
-          } else {
-            this.canCreate.set(false);
-            this.client.set(null);
-            props.gtcService.bus
-              .getPublisher()
-              .pub("acars_new_client", null, true, false);
-          }
-        });
-    } else {
-      props.gtcService.bus
-        .getSubscriber()
-        .on("acars_new_client")
-        .handle((v) => {
-          if (!v) {
-            this.client.set(null);
-            this.canCreate.set(false);
+          if (!oldClient) {
             return;
           }
-          const funcs = [
-            "sendPdc",
-            "sendOceanicClearance",
-            "atisRequest",
-            "sendTelex",
-            "sendLevelChange",
-            "sendSpeedChange",
-            "sendDirectTo",
-            "sendLogonRequest",
-            "sendLogoffRequest",
-          ];
+          oldClient.dispose();
+          const hoppieCode = this.settingsManager.getSetting("acars_code").get();
+          const isBeyondAtc = v === "beyondatc";
 
-          const client = {
-            callsign: v.callsign,
-            active_station: null,
-            pending_station: null,
-          };
-          for (const key of funcs) {
-            client[key] = function () {
-              props.gtcService.bus.getPublisher().pub(
-                "acars_message_request",
+          const client = createClient(
+            isBeyondAtc ? null : hoppieCode,
+            oldClient.callsign,
+            getAircraftIcao(),
+            this.onMessage.bind(this),
+            v,
+          );
+          this.client.set(client);
+          this.canCreate.set(true);
+        })
+      );
+      this.subscriptions.push(
+        this.props.gtcService.bus
+          .getSubscriber()
+          .on("acars_message_request")
+          .handle((v) => {
+            const state = this.client.get();
+            state[v.key].apply(this, Object.values(v.arguments || {}));
+          })
+      );
+      this.subscriptions.push(
+        this.props.gtcService.bus
+          .getSubscriber()
+          .on("acars_status_param")
+          .handle((imp) => {
+            if (imp.label !== "Flight ID") return;
+            const v = imp.value;
+            const oldClient = this.client.get();
+            if (oldClient) {
+              oldClient.dispose();
+            }
+            const hoppieCode = this.settingsManager
+              .getSetting("acars_code")
+              .get();
+            const network = this.settingsManager.getSetting("network").get();
+            const isBeyondAtc = network === "beyondatc";
+            if (v && v.length && (hoppieCode || isBeyondAtc)) {
+              const client = createClient(
+                isBeyondAtc ? null : hoppieCode,
+                v,
+                getAircraftIcao(),
+                this.onMessage.bind(this),
+                network,
+              );
+              this.client.set(client);
+              this.props.gtcService.bus.getPublisher().pub(
+                "acars_new_client",
                 {
-                  key,
-                  arguments,
+                  callsign: client.callsign,
                 },
                 true,
                 false,
               );
-              return true;
+              this.canCreate.set(true);
+            } else {
+              this.canCreate.set(false);
+              this.client.set(null);
+              this.props.gtcService.bus
+                .getPublisher()
+                .pub("acars_new_client", null, true, false);
+            }
+          })
+      );
+    } else {
+      this.subscriptions.push(
+        this.props.gtcService.bus
+          .getSubscriber()
+          .on("acars_new_client")
+          .handle((v) => {
+            if (!v) {
+              this.client.set(null);
+              this.canCreate.set(false);
+              return;
+            }
+            const funcs = [
+              "sendPdc",
+              "sendOceanicClearance",
+              "atisRequest",
+              "sendTelex",
+              "sendLevelChange",
+              "sendSpeedChange",
+              "sendDirectTo",
+              "sendLogonRequest",
+              "sendLogoffRequest",
+            ];
+
+            const client = {
+              callsign: v.callsign,
+              active_station: null,
+              pending_station: null,
             };
-          }
-          this.client.set(client);
-          this.canCreate.set(true);
-        });
+            for (const key of funcs) {
+              client[key] = () => {
+                this.props.gtcService.bus.getPublisher().pub(
+                  "acars_message_request",
+                  {
+                    key,
+                    arguments,
+                  },
+                  true,
+                  false,
+                );
+                return true;
+              };
+            }
+            this.client.set(client);
+            this.canCreate.set(true);
+          })
+      );
     }
 
     this.options = [
@@ -1757,7 +1799,31 @@ class AcarsTabView extends GtcView {
   onPause() {
     this.tabsRef.instance.pause();
   }
-  destroy() {}
+  destroy() {
+    // Destroy all subscriptions
+    for (const sub of this.subscriptions) {
+      if (sub && typeof sub.destroy === "function") {
+        sub.destroy();
+      }
+    }
+    this.subscriptions = [];
+
+    // Dispose the ACARS client if primary
+    if (this.isPrimary) {
+      const client = this.client.get();
+      if (client && typeof client.dispose === "function") {
+        client.dispose();
+      }
+    }
+
+    // Destroy tabs ref
+    const tabs = this.tabsRef.getOrDefault();
+    if (tabs && typeof tabs.destroy === "function") {
+      tabs.destroy();
+    }
+
+    super.destroy();
+  }
   render() {
     return (
       <div class={"acars-page"}>
@@ -1770,20 +1836,12 @@ class AcarsTabView extends GtcView {
           {this.renderTab(2, "CPDLC", this.renderCpdlcTab.bind(this))}
         </TabbedContainer>
         <GtcTouchButton
-          class={"acars-page-display-button2"}
+          class={"acars-page-display-button"}
           label={"Create\nMessage"}
           isVisible={true}
           isEnabled={this.canCreate}
           onPressed={() => {
             this.props.gtcService.openPopup("ACARS_MESSAGE_OPT");
-          }}
-        />
-        <GtcTouchButton
-          class={"acars-page-display-button"}
-          label={"Options"}
-          isVisible={true}
-          onPressed={() => {
-            this.props.gtcService.openPopup("ACARS_SETTINGS");
           }}
         />
       </div>
@@ -1835,4 +1893,28 @@ class AcarsTabView extends GtcView {
     );
   }
 }
+// Singleton settings manager cache
+let settingsManagerInstance = null;
+
+export function getSettingsManager(bus) {
+  if (!settingsManagerInstance) {
+    settingsManagerInstance = new DefaultUserSettingManager(bus, [
+      {
+        defaultValue: GetStoredData("hoppie_code"),
+        name: "acars_code",
+      },
+      {
+        defaultValue: GetStoredData("g3ka_simbrief_id"),
+        name: "g3ka_simbrief_id",
+      },
+      {
+        defaultValue: GetStoredData("g3ka_network") || "hoppie",
+        name: "network",
+      },
+    ]);
+  }
+  return settingsManagerInstance;
+}
+
+export { AcarsSettingsPopUp };
 export default AcarsTabView;

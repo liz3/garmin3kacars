@@ -1,4 +1,34 @@
 import * as esbuild from "esbuild";
+import { copyFileSync, mkdirSync, readdirSync, existsSync } from "fs";
+import { join } from "path";
+
+const isWatch = process.argv.includes("--watch") || process.argv.includes("-w");
+
+const DEST_DIR = "./g3000-acars/PackageSources/Copys/garmin-3000-acars/plugin/garmin-3000-acars";
+const PLUGINS_DIR = "./g3000-acars/PackageSources/Copys/garmin-3000-acars/plugin/Plugins";
+
+// Copy assets and CSS to destination
+function copyStaticFiles() {
+  // Ensure destination directories exist
+  if (!existsSync(DEST_DIR)) mkdirSync(DEST_DIR, { recursive: true });
+  if (!existsSync(PLUGINS_DIR)) mkdirSync(PLUGINS_DIR, { recursive: true });
+
+  // Copy CSS
+  copyFileSync("src/acars-style.css", join(DEST_DIR, "plugin.css"));
+
+  // Copy assets
+  const assetsDir = join(DEST_DIR, "assets");
+  if (!existsSync(assetsDir)) mkdirSync(assetsDir, { recursive: true });
+
+  for (const file of readdirSync("src/assets")) {
+    copyFileSync(join("src/assets", file), join(assetsDir, file));
+  }
+
+  // Copy plugin.xml
+  copyFileSync("src/plugin.xml", join(PLUGINS_DIR, "g3000-acars.xml"));
+
+  console.log("Static files copied!");
+}
 
 const ctx = await esbuild.context({
   entryPoints: ["src/app.mjs"],
@@ -26,8 +56,7 @@ const ctx = await esbuild.context({
   jsx: "transform",
   jsxFactory: "msfssdk.FSComponent.buildComponent",
   jsxFragment: "msfssdk.FSComponent.Fragment",
-  outfile:
-    "./g3000-acars/PackageSources/Copys/garmin-3000-acars/plugin/garmin-3000-acars/plugin.js",
+  outfile: join(DEST_DIR, "plugin.js"),
   external: [
     "@microsoft/msfs-sdk",
     "@microsoft/msfs-garminsdk",
@@ -36,4 +65,13 @@ const ctx = await esbuild.context({
   ],
 });
 
-await ctx.watch();
+if (isWatch) {
+  console.log("Watching for changes...");
+  copyStaticFiles();
+  await ctx.watch();
+} else {
+  await ctx.rebuild();
+  copyStaticFiles();
+  await ctx.dispose();
+  console.log("Build completed!");
+}

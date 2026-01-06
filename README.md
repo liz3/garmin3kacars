@@ -1,7 +1,8 @@
 # Garmin3kacars
 This adds Simbrief weight and balance import and Hoppie Acars to the Garmin 3000/5000 Avionics system.
 
-After installing its going to be on page Utilities > Acars.
+After installing its going to be on the homepage of the GTC
+Settings inside Utils->Setup
 
 After setting a simbrief id on Weight initialization you can load from simbrief.
 

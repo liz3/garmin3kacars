@@ -1,0 +1,236 @@
+# Garmin 3000/5000 ACARS Extension
+
+ACARS/CPDLC plugin for G3000/G5000 in MSFS 2024.
+
+## Framework Reference (Submodule)
+The MSFS Avionics framework source code is available in `reference/msfs-avionics/`.
+- Docs online: https://microsoft.github.io/msfs-avionics-mirror/2024/
+- GitHub: https://github.com/microsoft/msfs-avionics-mirror
+
+### Useful Paths
+```
+reference/msfs-avionics/src/
+├── sdk/                              # @microsoft/msfs-sdk
+├── garminsdk/                        # @microsoft/msfs-garminsdk
+└── workingtitle-instruments-g3000/   # G3000/G5000 implementation
+    ├── html_ui/GTC/                  # GTC components & pages
+    │   ├── Pages/MfdHomePage/        # MFD Home page
+    │   ├── Pages/UtilitiesPage/      # Utilities page
+    │   └── Components/TouchButton/   # Button components
+    └── wtg3000common/                # @microsoft/msfs-wtg3000-common
+        └── html_ui/Shared/
+            └── GtcView/GtcViewKeys.ts  # View keys enum
+```
+
+### Updating the Submodule
+```bash
+git submodule update --remote reference/msfs-avionics
+```
+
+## Stack
+- Framework: MSFS 2024 Avionics (JS/JSX)
+- UI: FSComponent (React-like)
+- State: Subject, ArraySubject, ObjectSubject
+- Comm: Event Bus
+- APIs: Hoppie, SayIntentions, SimBrief
+
+## File Structure
+```
+src/
+├── app.mjs              # Entry point, extends AbstractG3000GtcPlugin
+├── AcarsTabView.jsx     # Main UI with tabs (Status, CPDLC)
+├── Interceptor.jsx      # Intercepts existing components
+├── Hoppie.mjs           # ACARS client (polling, messages)
+├── WeightAndBalance.mjs # SimBrief integration
+├── AircraftModels.mjs   # Aircraft mappings
+└── acars-style.css      # Styles
+```
+
+## Conventions
+- `.mjs` → JS modules (no JSX)
+- `.jsx` → UI components with FSComponent
+- Classes: PascalCase
+- Functions/vars: camelCase
+- Config objects: SCREAMING_SNAKE_CASE
+
+## Language Requirements
+- **All code comments must be in English**
+- **All commit messages must be in English**
+- Code variable names, function names, and identifiers should follow standard English conventions
+
+## Core Patterns
+
+### Plugin Entry
+```javascript
+class MyPlugin extends AbstractG3000GtcPlugin {
+  onInstalled() { this.loadCss("coui://..."); }
+  registerGtcViews(ctx) { /* register views */ }
+}
+msfsSdk.registerPlugin(MyPlugin);
+```
+
+### Components
+Extend `DisplayComponent` or `GtcView`. Use `Subject.create()` for reactive state.
+```javascript
+this.myState = Subject.create(initialValue);
+this.myState.sub((newValue) => { /* react */ });
+```
+
+### Event Bus
+```javascript
+// Publish
+bus.getPublisher().pub("event_name", data, true, false);
+// Subscribe
+bus.getSubscriber().on("event_name").handle(callback);
+```
+
+### Views Registration
+```javascript
+ctx.registerView(GtcViewLifecyclePolicy.Persistent, "KEY", "MFD", 
+  (gtcService, controlMode, displayPaneIndex) => <MyView {...} />
+);
+```
+
+### Dialogs
+```javascript
+const result = await gtcService.openPopup(GtcViewKeys.TextDialog, "normal", "hide")
+  .ref.request({ label: "Field", maxLength: 10 });
+if (!result.wasCancelled) { /* use result.payload */ }
+```
+
+## CSS Rules
+- Support both `.gtc-horizontal` and `.gtc-vertical` orientations
+- Use Garmin CSS vars: `--g3000-color-white`, `--gtc-black-background-gradient`, `--gtc-popup-border-radius`
+- Prefer absolute positioning with CSS variables
+```css
+.gtc-horizontal .my-component { font-size: 29px; }
+.gtc-vertical .my-component { font-size: 16px; }
+```
+
+## MSFS APIs
+```javascript
+// SimVar
+SimVar.GetSimVarValue("TITLE", "string");
+SimVar.SetSimVarValue("FUEL TANK LEFT MAIN QUANTITY", "gallons", value);
+
+// Persistent storage
+GetStoredData("key"); 
+SetStoredData("key", value);
+
+// Input focus (for paste)
+Coherent.trigger("FOCUS_INPUT_FIELD", id, "", "", "", false);
+Coherent.trigger("UNFOCUS_INPUT_FIELD", id);
+```
+
+## Alerts & Audio
+```javascript
+// CAS Alert
+const manager = new CasRegistrationManager(bus);
+manager.register({ uuid: "acars-msg", message: "DATALINK MESSAGE" });
+bus.getPublisher().pub("cas_activate_alert", { key: { uuid: "acars-msg" }, priority: AnnunciationType.Advisory }, true, false);
+
+// Audio
+const audio = new AuralAlertRegistrationManager(bus);
+audio.register({ uuid: "acars-msg-sound", queue: "acars-queue", sequence: "tone_caution" });
+bus.getPublisher().pub("aural_alert_trigger", "acars-msg-sound", true, false);
+```
+
+## Dual GTC Sync
+- Primary GTC creates client, secondary syncs via Event Bus
+- Use `window.acarsSide` ("primary" | "secondary")
+- Sync events: `acars_message`, `acars_state_request`, `acars_status_param`
+
+## Lifecycle
+Always implement for resource management:
+- `onResume()` - resume subscriptions
+- `onPause()` - pause subscriptions  
+- `destroy()` - cleanup intervals/timeouts, destroy refs with `.getOrDefault()?.destroy()`
+
+## Supported Aircraft
+| Aircraft | ICAO | Notes |
+|----------|------|-------|
+| Citation Longitude | C700 | |
+| Vision Jet | SF50 | |
+| TBM 930 | TBM9 | |
+| Citation CJ3+ | C25B | Liv2Air mod supported |
+
+## ACARS Services
+```javascript
+const SERVICES = {
+  hoppie: "https://www.hoppie.nl/acars/system/connect.html",
+  sayintentions: "https://acars.sayintentions.ai/acars/system/connect.html",
+};
+```
+
+## Hoppie ACARS API
+Docs: https://www.hoppie.nl/acars/system/tech.html
+
+### Connection
+- **URL**: `http://www.hoppie.nl/acars/system/connect.html`
+- **Protocol**: GET or POST (prefer POST for long payloads)
+- **HTTP Timeout**: 15 seconds, then skip and retry after normal delay
+
+### Request Parameters
+| Param | Description |
+|-------|-------------|
+| `logon` | Secret code (min 24 char, mix lowercase/uppercase/numbers) |
+| `from` | Sender callsign |
+| `to` | Recipient callsign (or "SERVER" for server messages) |
+| `type` | Message type: `poll`, `telex`, `cpdlc`, `ping`, `posreq`, `position`, `datareq`, `peek`, `progress`, `inforeq` |
+| `packet` | Message payload |
+
+### Message Types
+| Type | Usage |
+|------|-------|
+| `poll` | **Periodic polling** - returns pending messages for the callsign |
+| `telex` | Generic messages (bulk of non-specialized traffic) |
+| `cpdlc` | CPDLC/ADS-C messages for ATC. "@" = line feed |
+| `ping` | Connection test (does not register online). With `packet=ALL-CALLSIGNS` returns station list |
+| `peek` | Like poll but returns ALL messages from the last 24h (use with caution!) |
+| `inforeq` | Info request: `metar ICAO`, `taf ICAO`, `vatatis ICAO`, `peatis ICAO`, `ivaoatis ICAO` |
+| `posreq` | Position request |
+| `progress` | Out/off/on/in times and ETA |
+
+### Polling Best Practices
+```
+⚠️ FUNDAMENTAL RULES:
+1. DO NOT start polling until the FIRST message is sent
+2. Poll every 45-75 seconds (random for server stability)
+3. After sending request: poll every 20 sec for a short time
+4. Timeout 15 sec → skip attempt, retry after normal delay
+5. URL max 256 characters (use POST for long payloads)
+```
+
+### Request Example
+```javascript
+// GET
+`${url}?logon=${logon}&from=${callsign}&to=SERVER&type=poll&packet=`
+
+// Telex
+`${url}?logon=${logon}&from=${callsign}&to=${dest}&type=telex&packet=${encodeURIComponent(msg)}`
+
+// CPDLC
+`${url}?logon=${logon}&from=${callsign}&to=${atcStation}&type=cpdlc&packet=${cpdlcPayload}`
+
+// Weather request
+`${url}?logon=${logon}&from=${callsign}&to=SERVER&type=inforeq&packet=metar LIRF`
+```
+
+### Telex Workaround for InfoReq
+If inforeq is not implemented, use telex with HCnnn pattern:
+```
+HC000 text  → Echo test
+HC001 ICAO  → PilotEdge ATIS
+HC002 ICAO  → IVAO ATIS (dashes → underscore)
+```
+
+### Response Parsing
+- Multiple messages separated by delimiters
+- CPDLC: "@" indicates line feed
+- Poll returns list of pending messages or empty
+
+## Key Imports
+- `@microsoft/msfs-sdk`: DisplayComponent, FSComponent, Subject, ArraySubject, CasRegistrationManager
+- `@microsoft/msfs-garminsdk`: TouchButton, UnitsUserSettings
+- `@microsoft/msfs-wtg3000-gtc`: AbstractG3000GtcPlugin, GtcView, GtcViewLifecyclePolicy, GtcViewKeys
+- `@microsoft/msfs-wtg3000-common`: WeightFuelUserSettings
