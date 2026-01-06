@@ -8,6 +8,7 @@ import {
   onSetupPage,
   onWeightPage,
   registerViews,
+  onSetupPageLiv2AirCj3
 } from "./Interceptor";
 import "./acars-style.css";
 
@@ -42,8 +43,13 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
             this.weightFuelInstance,
           );
         }
-        if (ctor.name === "GtcMfdHomePage") {
-          return onMfdHomePage(ctor, props, this.binder.gtcService);
+       if (ctor.name === "CustomGtcUtilitiesPage") {
+          return onSetupPageLiv2AirCj3(
+            ctor,
+            props,
+            this.binder.gtcService,
+            this.binder.fms,
+          );
         }
         if (ctor.name === "GtcSetupPage") {
           return onSetupPage(ctor, props, this.binder.gtcService);
@@ -67,7 +73,8 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
             this.weightFuelInstance,
           );
         }
-        if (ctor.name === "GtcMfdHomePage") {
+        if ( ctor.name === "GtcImgTouchButton" &&
+          props.label === "Crew Profile") {
           return onMfdHomePage(ctor, props, this.binder.gtcService);
         }
         if (ctor.name === "GtcSetupPage") {

@@ -235,6 +235,7 @@ class StatusTab extends DisplayComponent {
         false,
       );
     }
+    this.facility.set("");
   }
   render() {
     const sidebarState = Subject.create(null);

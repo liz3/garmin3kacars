@@ -105,10 +105,10 @@ const getRandomPollInterval = () => {
 };
 
 // Fast polling interval when expecting a response (20 seconds)
-const FAST_POLL_INTERVAL = 20000;
+const FAST_POLL_INTERVAL = 1000 * 20;
 
 // Duration to maintain fast polling after sending a request (2 minutes)
-const FAST_POLL_DURATION = 120000;
+const FAST_POLL_DURATION = 1000 * 60 * 2;
 
 const getPollInterval = (state) => {
   if (state._expectingResponse && Date.now() < state._expectingResponse) {
@@ -485,6 +485,7 @@ export const createClient = (
     return handleSuccessfulSend(state, await response.text());
   };
 
-  // Polling starts only after the first message is sent
+  // we start polling instantly with a normal interval in order to receive messages.
+  startPollingIfNeeded(state);
   return state;
 };
