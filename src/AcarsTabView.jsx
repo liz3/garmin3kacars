@@ -21,6 +21,7 @@ import {
   CasRegistrationManager,
   AnnunciationType,
   AuralAlertRegistrationManager,
+  SetSubject,
 } from "@microsoft/msfs-sdk";
 import { DynamicList } from "@microsoft/msfs-garminsdk";
 import {
@@ -31,63 +32,6 @@ import {
 import getAircraftIcao from "./AircraftModels.mjs";
 
 const BASE = "coui://html_ui/garmin-3000-acars/assets";
-
-// const ICONS = {
-//   DL_SENT: `${BASE}/dl_sent.png`,
-//   DL_STANDBY: `${BASE}/dl_standby.png`,
-//   DL_FAILED: `${BASE}/dl_failed.png`,
-//   DL_CLOSED: `${BASE}/dl_closed.png`,
-
-//   UL_STANDBY_UNREAD: `${BASE}/ul_standby_unread.png`,
-//   UL_STANDBY_READ: `${BASE}/ul_standby_read.png`,
-//   UL_NEED_RESPONSE_UNREAD: `${BASE}/ul_need_response_unread.png`,
-//   UL_NEED_RESPONSE_READ: `${BASE}/ul_need_response_read.png`,
-//   UL_EXPIRED_UNREAD: `${BASE}/ul_expired_unread.png`,
-//   UL_EXPIRED_READ: `${BASE}/ul_expired_read.png`,
-//   UL_CLOSED_UNREAD: `${BASE}/ul_closed_unread.png`,
-//   UL_CLOSED_READ: `${BASE}/ul_closed_read.png`,
-// };
-
-// function getMessageIconPath(message) {
-//   const state =
-//     typeof message.state?.get === "function"
-//       ? message.state.get()
-//       : (message.state ?? "");
-
-//   if (message.type === "send") {
-//     // Downlink
-//     switch (state) {
-//       case "Standby":
-//         return ICONS.DL_STANDBY;
-//       case "Send Failed":
-//       case "Expired":
-//         return ICONS.DL_FAILED;
-//       case "Closed":
-//         return ICONS.DL_CLOSED;
-//       case "Send":
-//       default:
-//         return ICONS.DL_SENT;
-//     }
-//   } else {
-//     // Uplink
-//     const read = !!message.viewed;
-//     switch (state) {
-//       case "Need Response":
-//         return read
-//           ? ICONS.UL_NEED_RESPONSE_READ
-//           : ICONS.UL_NEED_RESPONSE_UNREAD;
-//       case "Expired":
-//         return read ? ICONS.UL_EXPIRED_READ : ICONS.UL_EXPIRED_UNREAD;
-//       case "Closed":
-//         return read ? ICONS.UL_CLOSED_READ : ICONS.UL_CLOSED_UNREAD;
-//       case "Standby":
-//       case "Viewed":
-//       case "Incoming":
-//       default:
-//         return read ? ICONS.UL_STANDBY_READ : ICONS.UL_STANDBY_UNREAD;
-//     }
-//   }
-// }
 
 class StatusLine extends DisplayComponent {
   constructor() {
@@ -481,6 +425,28 @@ class CpdlcTab extends DisplayComponent {
         ? message.content
         : `${message.content.substr(0, 21)}...`;
 
+    // Icon part
+    const getIcon = (s) => {
+      if (s.includes("Viewed")) return `${BASE}/dl_closed.png`;
+      if (s.includes("Incoming")) return `${BASE}/dl_standby.png`;
+      return `${BASE}/dl_sent.png`;
+    };
+
+    // Unread effect part
+    const cssClass = SetSubject.create(["message-item"]);
+
+    if (message.type !== "send" && message.state.get() === "Incoming") {
+      cssClass.add("unread-effect");
+    }
+
+    message.state.sub((s) => {
+      if (message.type !== "send" && s === "Incoming") {
+        cssClass.add("unread-effect");
+      } else {
+        cssClass.delete("unread-effect");
+      }
+    });
+
     return (
       <GtcListItem>
         <GtcTouchButton
@@ -490,26 +456,23 @@ class CpdlcTab extends DisplayComponent {
               .ref.openMessage(message);
           }}
           isInList={true}
-          class={"message-item"}
+          class={cssClass}
         >
-          <div class={"text-block"}>
+          <div class="text-block">
             <span>{content}</span>
           </div>
-          <div class={"status-row"}>
-            <span class={"state-with-icon"}>
+          <div class="status-row">
+            <span class="state-with-icon">
               <img
-                class={"cpdlc-state-icon"}
-                src={message.state.map((s) => {
-                  if (s === "Viewed") return `${BASE}/ul_standby_read.png`;
-                  if (s === "Incoming") return `${BASE}/ul_standby_unread.png`;
-                  return `${BASE}/dl_sent.png`;
-                })}
+                class="cpdlc-state-icon"
+                src={message.state.map((s) => getIcon(s))}
+                alt=""
               />
               {message.state}
             </span>
             <span>{message.from}</span>
             <span>
-              <span class={"strong"}>{convertUnixToHHMM(message.ts)}</span>UTC
+              <strong>{convertUnixToHHMM(message.ts)}</strong>UTC
             </span>
           </div>
         </GtcTouchButton>
