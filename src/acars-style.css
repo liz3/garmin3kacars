@@ -143,6 +143,23 @@
   padding: 12px 8px;
   font-weight: bold;
 }
+.acars-page-cpdlc-tab .message-item .state-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.gtc-horizontal .acars-page-cpdlc-tab .message-item .cpdlc-state-icon {
+  width: 98px;
+  height: 53px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.gtc-vertical .acars-page-cpdlc-tab .message-item .cpdlc-state-icon {
+  width: 98px;
+  height: 53px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
 .acars-settings {
   position: absolute;
   left: calc(50% - var(--acars-settings-width) / 2);

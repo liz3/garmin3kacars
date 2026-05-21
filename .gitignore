@@ -4,6 +4,7 @@ node_modules/
 tools/PayloadStationsReader/bin
 tools/PayloadStationsReader/obj
 tools/PayloadStationsReader/publish
+MSFSLayoutGenerator.exe
 
 # MSFS SDK Build Output
 g3000-acars/_PackageInt/

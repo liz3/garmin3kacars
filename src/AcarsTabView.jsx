@@ -30,6 +30,65 @@ import {
 } from "./Hoppie.mjs";
 import getAircraftIcao from "./AircraftModels.mjs";
 
+const BASE = "coui://html_ui/garmin-3000-acars/assets";
+
+// const ICONS = {
+//   DL_SENT: `${BASE}/dl_sent.png`,
+//   DL_STANDBY: `${BASE}/dl_standby.png`,
+//   DL_FAILED: `${BASE}/dl_failed.png`,
+//   DL_CLOSED: `${BASE}/dl_closed.png`,
+
+//   UL_STANDBY_UNREAD: `${BASE}/ul_standby_unread.png`,
+//   UL_STANDBY_READ: `${BASE}/ul_standby_read.png`,
+//   UL_NEED_RESPONSE_UNREAD: `${BASE}/ul_need_response_unread.png`,
+//   UL_NEED_RESPONSE_READ: `${BASE}/ul_need_response_read.png`,
+//   UL_EXPIRED_UNREAD: `${BASE}/ul_expired_unread.png`,
+//   UL_EXPIRED_READ: `${BASE}/ul_expired_read.png`,
+//   UL_CLOSED_UNREAD: `${BASE}/ul_closed_unread.png`,
+//   UL_CLOSED_READ: `${BASE}/ul_closed_read.png`,
+// };
+
+// function getMessageIconPath(message) {
+//   const state =
+//     typeof message.state?.get === "function"
+//       ? message.state.get()
+//       : (message.state ?? "");
+
+//   if (message.type === "send") {
+//     // Downlink
+//     switch (state) {
+//       case "Standby":
+//         return ICONS.DL_STANDBY;
+//       case "Send Failed":
+//       case "Expired":
+//         return ICONS.DL_FAILED;
+//       case "Closed":
+//         return ICONS.DL_CLOSED;
+//       case "Send":
+//       default:
+//         return ICONS.DL_SENT;
+//     }
+//   } else {
+//     // Uplink
+//     const read = !!message.viewed;
+//     switch (state) {
+//       case "Need Response":
+//         return read
+//           ? ICONS.UL_NEED_RESPONSE_READ
+//           : ICONS.UL_NEED_RESPONSE_UNREAD;
+//       case "Expired":
+//         return read ? ICONS.UL_EXPIRED_READ : ICONS.UL_EXPIRED_UNREAD;
+//       case "Closed":
+//         return read ? ICONS.UL_CLOSED_READ : ICONS.UL_CLOSED_UNREAD;
+//       case "Standby":
+//       case "Viewed":
+//       case "Incoming":
+//       default:
+//         return read ? ICONS.UL_STANDBY_READ : ICONS.UL_STANDBY_UNREAD;
+//     }
+//   }
+// }
+
 class StatusLine extends DisplayComponent {
   constructor() {
     super(...arguments);
@@ -342,7 +401,7 @@ class CpdlcTab extends DisplayComponent {
     this.listRef = FSComponent.createRef();
     this.messages = ArraySubject.create();
     this.listItemHeight =
-      this.props.gtcService.orientation === "horizontal" ? 300 : 180;
+      this.props.gtcService.orientation === "horizontal" ? 230 : 120;
     if (window.acarsSide === "primary") {
       this.props.gtcService.bus
         .getSubscriber()
@@ -437,9 +496,21 @@ class CpdlcTab extends DisplayComponent {
             <span>{content}</span>
           </div>
           <div class={"status-row"}>
-            <span>{message.state}</span>
+            <span class={"state-with-icon"}>
+              <img
+                class={"cpdlc-state-icon"}
+                src={message.state.map((s) => {
+                  if (s === "Viewed") return `${BASE}/ul_standby_read.png`;
+                  if (s === "Incoming") return `${BASE}/ul_standby_unread.png`;
+                  return `${BASE}/dl_sent.png`;
+                })}
+              />
+              {message.state}
+            </span>
             <span>{message.from}</span>
-            <span class={"strong"}>{convertUnixToHHMM(message.ts)}</span>
+            <span>
+              <span class={"strong"}>{convertUnixToHHMM(message.ts)}</span>UTC
+            </span>
           </div>
         </GtcTouchButton>
       </GtcListItem>
@@ -959,16 +1030,17 @@ class AcarsSettingsPopUp extends GtcView {
             label={"Network"}
             onSelected={(v) => {
               this.networkValue.set(v);
-              this.props.settingsManager
-                .getSetting("network")
-                .set(v);
+              this.props.settingsManager.getSetting("network").set(v);
               SetStoredData("g3ka_network", v);
             }}
             listParams={{
               title: "Network",
               inputData: [
                 { value: "hoppie", labelRenderer: () => "Hoppie" },
-                { value: "sayintentions", labelRenderer: () => "SayIntentions" },
+                {
+                  value: "sayintentions",
+                  labelRenderer: () => "SayIntentions",
+                },
                 { value: "beyondatc", labelRenderer: () => "BeyondATC" },
               ],
             }}
@@ -1058,6 +1130,20 @@ class AcarsTabView extends GtcView {
         .pub("acars_instance_create", {}, true, false);
     }
     this.latestMessage = Subject.create(null);
+    this.unreadCount = Subject.create(0);
+    this.cpdlcTabLabel = Subject.create("CPDLC");
+    this.subscriptions.push(
+      this.props.gtcService.bus
+        .getSubscriber()
+        .on("acars_message_read_state")
+        .handle((e) => {
+          if (e.state === "Viewed" || e.state === "Closed") {
+            const count = Math.max(0, this.unreadCount.get() - 1);
+            this.unreadCount.set(count);
+            this.cpdlcTabLabel.set(count > 0 ? `CPDLC\n(${count})` : "CPDLC");
+          }
+        }),
+    );
     const now = new Date();
     this.depTime = Subject.create(now.getUTCHours() * 60 + now.getUTCMinutes());
     this.subscriptions.push(
@@ -1066,7 +1152,7 @@ class AcarsTabView extends GtcView {
         .on("lnavdata_waypoint_distance")
         .handle((v) => {
           this.distance.set(v);
-        })
+        }),
     );
     this.subscriptions.push(
       this.props.gtcService.bus
@@ -1074,7 +1160,7 @@ class AcarsTabView extends GtcView {
         .on("ground_speed")
         .handle((v) => {
           this.groundSpeed.set(v);
-        })
+        }),
     );
     if (isPrimary) {
       this.subscriptions.push(
@@ -1090,7 +1176,7 @@ class AcarsTabView extends GtcView {
                 true,
                 false,
               );
-          })
+          }),
       );
     } else {
       const sub = this.props.gtcService.bus
@@ -1125,7 +1211,7 @@ class AcarsTabView extends GtcView {
               message.response(v.e);
               message.status.set("Closed");
             }
-          })
+          }),
       );
       this.subscriptions.push(
         this.settingsManager.getSetting("network").sub((v) => {
@@ -1134,7 +1220,9 @@ class AcarsTabView extends GtcView {
             return;
           }
           oldClient.dispose();
-          const hoppieCode = this.settingsManager.getSetting("acars_code").get();
+          const hoppieCode = this.settingsManager
+            .getSetting("acars_code")
+            .get();
           const isBeyondAtc = v === "beyondatc";
 
           const client = createClient(
@@ -1146,7 +1234,7 @@ class AcarsTabView extends GtcView {
           );
           this.client.set(client);
           this.canCreate.set(true);
-        })
+        }),
       );
       this.subscriptions.push(
         this.props.gtcService.bus
@@ -1155,7 +1243,7 @@ class AcarsTabView extends GtcView {
           .handle((v) => {
             const state = this.client.get();
             state[v.key].apply(this, Object.values(v.arguments || {}));
-          })
+          }),
       );
       this.subscriptions.push(
         this.props.gtcService.bus
@@ -1198,7 +1286,7 @@ class AcarsTabView extends GtcView {
                 .getPublisher()
                 .pub("acars_new_client", null, true, false);
             }
-          })
+          }),
       );
     } else {
       this.subscriptions.push(
@@ -1244,7 +1332,7 @@ class AcarsTabView extends GtcView {
             }
             this.client.set(client);
             this.canCreate.set(true);
-          })
+          }),
       );
     }
 
@@ -1682,6 +1770,12 @@ class AcarsTabView extends GtcView {
     this.bus.getPublisher().pub("acars_message", message, true);
     this.latestMessage.set(message);
     if (message.type === "send") return;
+
+    // Count CPDLC messages as unread
+    const count = this.unreadCount.get() + 1;
+    this.unreadCount.set(count);
+    this.cpdlcTabLabel.set(`CPDLC\n(${count})`);
+
     this.bus.getPublisher().pub(
       "cas_activate_alert",
       {
@@ -1833,7 +1927,11 @@ class AcarsTabView extends GtcView {
           configuration="L5"
         >
           {this.renderTab(1, "Status", this.renderStatusTab.bind(this))}
-          {this.renderTab(2, "CPDLC", this.renderCpdlcTab.bind(this))}
+          {this.renderTab(
+            2,
+            this.cpdlcTabLabel,
+            this.renderCpdlcTab.bind(this),
+          )}
         </TabbedContainer>
         <GtcTouchButton
           class={"acars-page-display-button"}
