@@ -1,7 +1,7 @@
 const models = {
   "Longitude": "C700",
   "Vision Jet": "SF50",
-  "TBM 930": "TMB9",
+  "TBM 930": "TBM9",
   "CJ3+": "C25B",
 };
 const weights = {
