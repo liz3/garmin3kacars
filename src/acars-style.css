@@ -212,7 +212,8 @@
 
 .gtc-horizontal .acars-settings {
   --acars-settings-top: 45px;
-  --acars-settings-width: 445px;
+  /* --acars-settings-width: 445px; */
+  --acars-settings-width: 800px;
   --acars-settings-height: 715px;
 
   --acars-settings-button-icon-width: 100px;
@@ -261,11 +262,16 @@
   flex-flow: column nowrap;
   justify-content: center;
   align-items: center;
+  padding: 15px;
 }
 .acars-message-dialog-popup {
   background: var(--gtc-black-background-gradient);
   border: var(--gtc-black-background-border);
   border-radius: var(--gtc-popup-border-radius);
+  left: calc(50% - var(--acars-message-popup-width) / 2);
+  top: var(--acars-message-popup-top);
+  width: var(--acars-message-popup-width);
+  height: var(--acars-message-popup-height);
 }
 
 .acars-message-dialog .header {
@@ -278,6 +284,9 @@
 .acars-message-dialog .list {
   width: 100%;
   height: 75%;
+  background: var(--gtc-black-background-gradient);
+  border: var(--gtc-black-background-border);
+  border-radius: var(--gtc-popup-border-radius);
 }
 .acars-message-dialog .item {
   width: 100%;
@@ -285,18 +294,29 @@
 }
 .acars-message-dialog .footer {
   width: 100%;
-  height: 15%;
   display: flex;
-  padding: 6px;
-  justify-content: center;
+  flex-direction: column;
+  padding: 15px 15px;
+  gap: 4px;
+}
+.acars-message-dialog .footer .status-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--wt-color-white);
+  font-size: 25px;
+  padding-bottom: 40px;
 }
 .acars-message-dialog .footer .touch-button {
-  width: 95%;
+  align-self: center;
+  width: 25%;
   font-size: 26px;
+  height: 110px;
 }
 .gtc-horizontal .acars-message-dialog {
   --acars-message-popup-top: 45px;
-  --acars-message-popup-width: 650px;
+  --acars-message-popup-width: 800px;
   --acars-message-popup-height: 715px;
 
   --acars-message-popup-button-icon-width: 100px;
@@ -607,4 +627,68 @@
 
 .acars-status-page-tab-left-button .touch-button-value-value {
   font-size: 1.3em;
+}
+
+.gtc-horizontal {
+  --numpad-touch-button-width: 136px;
+  --numpad-touch-button-height: 136px;
+  --numpad-touch-button-font-size: 86px;
+}
+
+.gtc-vertical {
+  --numpad-touch-button-width: 73px;
+  --numpad-touch-button-height: 73px;
+  --numpad-touch-button-font-size: 45px;
+}
+
+.numpad-touch-button {
+  width: var(--numpad-touch-button-width);
+  height: var(--numpad-touch-button-height);
+  font-size: var(--numpad-touch-button-font-size);
+}
+
+.gtc-horizontal .number-dialog.vnav-fpa-dialog {
+  --vnav-fpa-dialog-inactive-min-width: 133px;
+  --vnav-fpa-dialog-input-height: 44px;
+
+  --vnav-fpa-dialog-button-margin: 16px;
+  --vnav-fpa-dialog-button-width: 217px;
+  --vnav-fpa-dialog-button-height: 129px;
+  --vnav-fpa-dialog-button-font-size: 36px;
+}
+
+.gtc-vertical .number-dialog.vnav-fpa-dialog {
+  --vnav-fpa-dialog-inactive-min-width: 73px;
+  --vnav-fpa-dialog-input-height: 24px;
+
+  --vnav-fpa-dialog-button-margin: 5px;
+  --vnav-fpa-dialog-button-width: 125px;
+  --vnav-fpa-dialog-button-height: 66px;
+  --vnav-fpa-dialog-button-font-size: 16px;
+}
+
+.vnav-fpa-dialog .cursor-input-inactive {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.vnav-fpa-dialog .vnav-fpa-dialog-input-inactive {
+  text-align: right;
+  background-color: var(--g3000-color-cyan);
+  min-width: var(--vnav-fpa-dialog-inactive-min-width);
+  height: var(--vnav-fpa-dialog-input-height);
+}
+
+.vnav-fpa-dialog-input-cyan {
+  color: var(--g3000-color-cyan);
+}
+
+.vnav-fpa-dialog .remove-button {
+  position: absolute;
+  left: var(--vnav-fpa-dialog-button-margin);
+  bottom: var(--vnav-fpa-dialog-button-margin);
+  width: var(--vnav-fpa-dialog-button-width);
+  height: var(--vnav-fpa-dialog-button-height);
+  font-size: var(--vnav-fpa-dialog-button-font-size);
 }

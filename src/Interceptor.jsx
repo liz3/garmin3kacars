@@ -3,6 +3,7 @@ import { DisplayComponent, FSComponent, Subject } from "@microsoft/msfs-sdk";
 import AcarsTabView, {
   AcarsSettingsPopUp,
   getSettingsManager,
+  GtcCpdlcAltitudeDialog,
 } from "./AcarsTabView";
 import { GtcViewLifecyclePolicy } from "@microsoft/msfs-wtg3000-gtc";
 import { loadFuelAndBalance } from "./WeightAndBalance.mjs";
@@ -192,6 +193,20 @@ export const registerViews = (ctx, fms) => {
           gtcService={gtcService}
           displayPaneIndex={displayPaneIndex}
           controlMode={controlMode}
+        />
+      );
+    },
+  );
+  ctx.registerView(
+    GtcViewLifecyclePolicy.Persistent,
+    "ACARS_ENTRY_ALTITUDE",
+    "MFD",
+    (gtcService, controlMode, displayPaneIndex) => {
+      return (
+        <GtcCpdlcAltitudeDialog
+          gtcService={gtcService}
+          controlMode={controlMode}
+          displayPaneIndex={displayPaneIndex}
         />
       );
     },

@@ -10,6 +10,11 @@ import {
   GtcValueTouchButton,
   GtcListSelectTouchButton,
   GtcInteractionEvent,
+  DigitInputSlot,
+  NumberInput,
+  NumberPad,
+  GtcToggleTouchButton,
+  GtcMessageDialog,
 } from "@microsoft/msfs-wtg3000-gtc";
 import {
   DefaultUserSettingManager,
@@ -22,8 +27,15 @@ import {
   AnnunciationType,
   AuralAlertRegistrationManager,
   SetSubject,
+  MathUtils,
+  UnitType,
 } from "@microsoft/msfs-sdk";
-import { DynamicList } from "@microsoft/msfs-garminsdk";
+import {
+  DynamicList,
+  ImgTouchButton,
+  NumberUnitDisplay,
+} from "@microsoft/msfs-garminsdk";
+import { G3000FilePaths } from "@microsoft/msfs-wtg3000-common";
 import {
   convertUnixToHHMM,
   createClient,
@@ -472,7 +484,7 @@ class CpdlcTab extends DisplayComponent {
             </span>
             <span>{message.from}</span>
             <span>
-              <strong>{convertUnixToHHMM(message.ts)}</strong>UTC
+              <span class={"strong"}>{convertUnixToHHMM(message.ts)}</span>UTC
             </span>
           </div>
         </GtcTouchButton>
@@ -733,8 +745,27 @@ class AcarsSendTemplate extends GtcView {
             class={"item"}
             state={this[`field_${e.name}`]}
             label={e.name}
-            renderValue={(v) => (v ? v : e.displayFallback || "----")}
+            renderValue={
+              e.renderValue
+                ? (v) => (v ? e.renderValue(v) : e.displayFallback || "----")
+                : (v) => (v ? v : e.displayFallback || "----")
+            }
             onPressed={async () => {
+              if (e.type === "ACARS_ENTRY_ALTITUDE") {
+                const current = this[`field_${e.name}`].get();
+                const result = await this.props.gtcService
+                  .openPopup("ACARS_ENTRY_ALTITUDE", "normal", "hide")
+                  .ref.request({
+                    initialAltitudeFeet: current?.altitudeFeet ?? 0,
+                    isFlightLevel: current?.isFlightLevel ?? true,
+                    title: "Altitude Entry",
+                  });
+                if (result.wasCancelled) return;
+                this[`field_${e.name}`].set(result.payload);
+                this.runValidCheck();
+                return;
+              }
+
               let result = await this.props.gtcService
                 .openPopup(e.type, "normal", "hide")
                 .ref.request({
@@ -744,18 +775,17 @@ class AcarsSendTemplate extends GtcView {
                   initialValue: this[`field_${e.name}`].get(),
                   initialInputText: this[`field_${e.name}`].get(),
                 });
-              if (result.wasCancelled) {
-                return;
-              }
+              if (result.wasCancelled) return;
 
               this[`field_${e.name}`].set(
                 e.transform ? e.transform(result.payload) : result.payload,
               );
               this.runValidCheck();
+
               let x = e;
               let inc = 0;
               while (
-                x.name.includes(`Remarks`) &&
+                x.name.includes("Remarks") &&
                 result.payload.length === 12
               ) {
                 if (x.c === this.option.get().freeTextCount) break;
@@ -769,9 +799,7 @@ class AcarsSendTemplate extends GtcView {
                     initialValue: this[`field_${x.name}`].get(),
                     initialInputText: this[`field_${x.name}`].get(),
                   });
-                if (result.wasCancelled) {
-                  return;
-                }
+                if (result.wasCancelled) return;
                 this[`field_${x.name}`].set(
                   e.transform ? e.transform(result.payload) : result.payload,
                 );
@@ -855,6 +883,16 @@ class AcarsSendTemplate extends GtcView {
           renderItem={this.renderItem.bind(this)}
         />
         <div class={"footer"}>
+          <div class={"status-row"}>
+            <span>
+              {this.props.client.map(
+                (c) => c?.active_station ?? "Facility Unknown",
+              )}
+            </span>
+            <span>
+              <span class={"strong"}>{convertUnixToHHMM(Date.now())}</span>UTC
+            </span>
+          </div>
           <GtcTouchButton
             label={this.buttonText}
             isEnabled={this.valid}
@@ -1622,23 +1660,31 @@ class AcarsTabView extends GtcView {
         onSend: async (d) => {
           const client = this.client.get();
           if (!client || !client.active_station) return false;
+          const flValue = d.FL?.isFlightLevel
+            ? String(d.FL.altitudeFeet / 100)
+            : String(d.FL.altitudeFeet);
           return client.sendLevelChange(
-            d.FL,
+            flValue,
             d.Change === "Climb",
             d.Reason,
             d.FreeText,
           );
         },
-        freeText: true,
-        freeTextCount: 5,
+        freeText: false,
+        freeTextCount: 0,
         fields: [
           {
-            name: "FL",
-            allowSpaces: false,
-            maxLength: 3,
-            type: GtcViewKeys.TextDialog,
+            name: "Request Level",
+            type: "ACARS_ENTRY_ALTITUDE",
             displayFallback: "FL---",
-            validate: (v) => v.length && !Number.isNaN(Number.parseInt(v)),
+            renderValue: (v) => {
+              if (!v) return "FL---";
+              return v.isFlightLevel
+                ? `FL${String(v.altitudeFeet / 100).padStart(3, "0")}`
+                : `${v.altitudeFeet}FT`;
+            },
+            validate: (v) => v !== null && v !== "" && v?.altitudeFeet > 0,
+            initialValue: null,
           },
           {
             name: "Change",
@@ -1812,6 +1858,7 @@ class AcarsTabView extends GtcView {
             gtcService={gtcService}
             displayPaneIndex={displayPaneIndex}
             controlMode={controlMode}
+            client={this.client}
           />
         );
       },
@@ -1951,6 +1998,418 @@ class AcarsTabView extends GtcView {
         sidebarState={sidebarState}
         fms={this.props.fms}
       />
+    );
+  }
+}
+/**
+ * Entry parameters for the dialog.
+ * @typedef {{
+ *   initialAltitudeFeet: number,
+ *   isFlightLevel: boolean,
+ *   title?: string,
+ *   maxAltitudeFeet?: number,
+ *   isMaxAltitudeFlightLevel?: boolean,
+ * }} VnavAltitudeDialogInput
+ */
+
+/**
+ * Dialog result object.
+ * @typedef {{
+ *   wasCancelled: false,
+ *   payload: { result: 'set', altitudeFeet: number, isFlightLevel: boolean }
+ * } | { wasCancelled: true }} VnavAltitudeDialogResult
+ */
+
+const FORMATTER = (v, u) => v.toFixed(0);
+
+// Based on VnavAltitudeDialog
+export class GtcCpdlcAltitudeDialog extends GtcView {
+  constructor(props) {
+    super(props);
+
+    this.mslInputRef = FSComponent.createRef();
+    this.flInputRef = FSComponent.createRef();
+    this.numpadRef = FSComponent.createRef();
+    this.backspaceRef = FSComponent.createRef();
+
+    /** @type {import('@microsoft/msfs-sdk').NodeReference<NumberInput> | null} */
+    this.activeInput = null;
+
+    this.mslInputCssClass = SetSubject.create([
+      "number-dialog-input",
+      "msl-input",
+      "hidden",
+    ]);
+    this.flInputCssClass = SetSubject.create([
+      "number-dialog-input",
+      "fl-input",
+      "hidden",
+    ]);
+
+    this.valueMSL = Subject.create(0);
+    this.valueFL = Subject.create(0);
+
+    this.flightLevelModeEnabled = Subject.create(false);
+    this.meanSeaLevelModeEnabled = Subject.create(true);
+
+    this.isFlightLevel = Subject.create(false);
+
+    this.maxAltitudeFeet = undefined;
+    this.isMaxAltitudeFlightLevel = undefined;
+
+    this._resolve = null;
+    this._resultObject = { wasCancelled: true };
+  }
+
+  onAfterRender(thisNode) {
+    this._thisNode = thisNode;
+
+    this._sidebarState.dualConcentricKnobLabel.set("dataEntryPushEnter");
+    this._sidebarState.slot5.set("enterEnabled");
+
+    this.mslInputRef.instance.isEditingActive.sub((isActive) => {
+      this._onEditingActiveChanged(isActive);
+    });
+    this.flInputRef.instance.isEditingActive.sub((isActive) => {
+      this._onEditingActiveChanged(isActive);
+    });
+
+    this.isFlightLevel.sub((isFlightLevel) => {
+      this.flightLevelModeEnabled.set(isFlightLevel);
+      this.meanSeaLevelModeEnabled.set(!isFlightLevel);
+
+      this.activeInput?.instance.deactivateEditing();
+
+      if (isFlightLevel) {
+        this.activeInput = this.flInputRef;
+        this.valueFL.set(this._convertFeetToFl(this.valueMSL.get()));
+        this.flInputRef.instance.setValue(this.valueFL.get());
+      } else {
+        this.activeInput = this.mslInputRef;
+        this.valueMSL.set(this._convertFlToFeet(this.valueFL.get()));
+        this.mslInputRef.instance.setValue(this.valueMSL.get());
+      }
+
+      this.flInputCssClass.toggle("hidden", !isFlightLevel);
+      this.mslInputCssClass.toggle("hidden", isFlightLevel);
+
+      this.activeInput.instance.refresh();
+    }, true);
+  }
+
+  onResume() {
+    this.activeInput?.instance.refresh();
+  }
+
+  onClose() {
+    this._cleanupRequest();
+  }
+
+  destroy() {
+    this._cleanupRequest();
+    this._thisNode && FSComponent.shallowDestroy(this._thisNode);
+    super.destroy();
+  }
+
+  /**
+   * @param {VnavAltitudeDialogInput} input
+   * @returns {Promise<VnavAltitudeDialogResult>}
+   */
+  request(input) {
+    return new Promise((resolve) => {
+      this._cleanupRequest();
+
+      this._resolve = resolve;
+      this._resultObject = { wasCancelled: true };
+
+      this._sidebarState.slot1.set(null);
+      this._title.set(input.title ?? "Altitude Entry");
+
+      this.maxAltitudeFeet = input.maxAltitudeFeet;
+      this.isMaxAltitudeFlightLevel = input.isMaxAltitudeFlightLevel;
+
+      this.isFlightLevel.set(input.isFlightLevel ?? false);
+
+      this.valueMSL.set(input.initialAltitudeFeet);
+      this.valueFL.set(this._convertFeetToFl(input.initialAltitudeFeet));
+
+      this.mslInputRef.instance.setValue(this.valueMSL.get());
+      this.flInputRef.instance.setValue(this.valueFL.get());
+    });
+  }
+
+  onGtcInteractionEvent(event) {
+    switch (event) {
+      case GtcInteractionEvent.InnerKnobInc:
+        this.activeInput?.instance.changeSlotValue(1);
+        return true;
+      case GtcInteractionEvent.InnerKnobDec:
+        this.activeInput?.instance.changeSlotValue(-1);
+        return true;
+      case GtcInteractionEvent.OuterKnobInc:
+        this.activeInput?.instance.moveCursor(1, true);
+        return true;
+      case GtcInteractionEvent.OuterKnobDec:
+        this.activeInput?.instance.moveCursor(-1, true);
+        return true;
+      case GtcInteractionEvent.InnerKnobPush:
+      case GtcInteractionEvent.InnerKnobPushLong:
+      case GtcInteractionEvent.ButtonBarEnterPressed:
+        this._validateAndClose();
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  _convertFeetToFl(feet) {
+    if (feet < 511) return feet;
+    const converted = Math.round(feet / 100);
+    return converted === 1000 ? 100 : converted;
+  }
+
+  _convertFlToFeet(fl) {
+    return fl * 100;
+  }
+
+  _onEditingActiveChanged(isActive) {
+    if (isActive) {
+      this._sidebarState.slot1.set("cancel");
+    }
+  }
+
+  _cleanupRequest() {
+    this.activeInput?.instance.deactivateEditing();
+    const resolve = this._resolve;
+    this._resolve = null;
+    resolve?.(this._resultObject);
+  }
+
+  _isValueValid(valueFeet) {
+    if (this.maxAltitudeFeet !== undefined) {
+      return valueFeet <= this.maxAltitudeFeet;
+    }
+    return true;
+  }
+
+  _getInvalidValueMessage() {
+    if (this.isMaxAltitudeFlightLevel) {
+      return (
+        <div>
+          <span>Invalid Altitude</span>
+          <br />
+          <span>Please enter an altitude less than</span>
+          <br />
+          <span>
+            or equal to FL{((this.maxAltitudeFeet ?? 0) / 100).toFixed(0)}
+          </span>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <span>Invalid Altitude</span>
+        <br />
+        <span>Please enter an altitude less than</span>
+        <br />
+        <span>
+          or equal to {this.maxAltitudeFeet?.toFixed(0)}
+          <span class="numberunit-unit-small">FT</span>
+        </span>
+      </div>
+    );
+  }
+
+  _onNumberPressed(value) {
+    this.activeInput?.instance.setSlotCharacterValue(`${value}`);
+  }
+
+  _onBackspacePressed() {
+    this.activeInput?.instance.backspace();
+  }
+
+  async _validateAndClose() {
+    const isFL = this.isFlightLevel.get();
+    const valueFeet = isFL
+      ? this._convertFlToFeet(this.valueFL.get())
+      : this.valueMSL.get();
+
+    if (this._isValueValid(valueFeet)) {
+      this._resultObject = {
+        wasCancelled: false,
+        payload: {
+          result: "set",
+          altitudeFeet: valueFeet,
+          isFlightLevel: isFL,
+        },
+      };
+      this.props.gtcService.goBack();
+    } else {
+      await this.props.gtcService
+        .openPopup(GtcViewKeys.MessageDialog1)
+        .ref.request({
+          message: this._getInvalidValueMessage(),
+          showRejectButton: false,
+        });
+    }
+  }
+
+  render() {
+    return (
+      <div class="number-dialog vnav-altitude-dialog">
+        <NumberInput
+          ref={this.mslInputRef}
+          value={this.valueMSL}
+          digitizeValue={(value, _setSign, setDigit) => {
+            const v = MathUtils.clamp(Math.round(value), 0, 99999);
+            setDigit[0](Math.trunc(v / 1e4), true);
+            setDigit[1](Math.trunc((v % 1e4) / 1e3), true);
+            setDigit[2](Math.trunc((v % 1e3) / 1e2), true);
+            setDigit[3](Math.trunc((v % 1e2) / 1e1), true);
+            setDigit[4](v % 1e1, true);
+          }}
+          renderInactiveValue={(value) => (
+            <NumberUnitDisplay
+              value={UnitType.FOOT.createNumber(
+                MathUtils.clamp(Math.round(value), 0, 99999),
+              )}
+              displayUnit={null}
+              formatter={FORMATTER}
+              class="vnav-altitude-dialog-input-inactive"
+            />
+          )}
+          allowBackFill={true}
+          class={this.mslInputCssClass}
+        >
+          <DigitInputSlot
+            characterCount={1}
+            minValue={0}
+            maxValue={10}
+            increment={1}
+            wrap={true}
+            scale={1e4}
+            defaultCharValues={[0]}
+          />
+          <DigitInputSlot
+            characterCount={1}
+            minValue={0}
+            maxValue={10}
+            increment={1}
+            wrap={true}
+            scale={1e3}
+            defaultCharValues={[0]}
+          />
+          <DigitInputSlot
+            characterCount={1}
+            minValue={0}
+            maxValue={10}
+            increment={1}
+            wrap={true}
+            scale={1e2}
+            defaultCharValues={[0]}
+          />
+          <DigitInputSlot
+            characterCount={1}
+            minValue={0}
+            maxValue={10}
+            increment={1}
+            wrap={true}
+            scale={1e1}
+            defaultCharValues={[0]}
+          />
+          <DigitInputSlot
+            characterCount={1}
+            minValue={0}
+            maxValue={10}
+            increment={1}
+            wrap={true}
+            scale={1}
+            defaultCharValues={[0]}
+          />
+          <div class="numberunit-unit-small">FT</div>
+        </NumberInput>
+
+        <NumberInput
+          ref={this.flInputRef}
+          value={this.valueFL}
+          digitizeValue={(value, _setSign, setDigit) => {
+            const v = MathUtils.clamp(Math.round(value), 0, 999);
+            setDigit[0](Math.trunc(v / 1e2), true);
+            setDigit[1](Math.trunc((v % 1e2) / 1e1), true);
+            setDigit[2](v % 1e1, true);
+          }}
+          renderInactiveValue={(value) => (
+            <div class="vnav-altitude-dialog-input-inactive">
+              <span>FL</span>
+              <span>
+                {MathUtils.clamp(Math.round(value), 0, 999).toFixed(0)}
+              </span>
+            </div>
+          )}
+          allowBackFill={true}
+          class={this.flInputCssClass}
+        >
+          <span>FL</span>
+          <DigitInputSlot
+            characterCount={1}
+            minValue={0}
+            maxValue={10}
+            increment={1}
+            wrap={true}
+            scale={1e2}
+            defaultCharValues={[0]}
+          />
+          <DigitInputSlot
+            characterCount={1}
+            minValue={0}
+            maxValue={10}
+            increment={1}
+            wrap={true}
+            scale={1e1}
+            defaultCharValues={[0]}
+          />
+          <DigitInputSlot
+            characterCount={1}
+            minValue={0}
+            maxValue={10}
+            increment={1}
+            wrap={true}
+            scale={1}
+            defaultCharValues={[0]}
+          />
+        </NumberInput>
+
+        <div class="number-dialog-numpad-container vnav-altitude-dialog-numpad-container">
+          <NumberPad
+            ref={this.numpadRef}
+            onNumberPressed={this._onNumberPressed.bind(this)}
+            class="number-dialog-numpad vnav-altitude-dialog-numpad"
+            orientation={this.props.gtcService.orientation}
+          />
+        </div>
+
+        <ImgTouchButton
+          ref={this.backspaceRef}
+          label="BKSP"
+          imgSrc={`${G3000FilePaths.ASSETS_PATH}/Images/GTC/icon_backspace_long.png`}
+          onPressed={this._onBackspacePressed.bind(this)}
+          class="number-dialog-backspace vnav-altitude-dialog-backspace"
+        />
+
+        <div class="gtc-panel mode-panel">
+          <div class="gtc-panel-title">Mode</div>
+          <GtcToggleTouchButton
+            state={this.flightLevelModeEnabled}
+            label={"Flight\nLevel"}
+            onPressed={() => this.isFlightLevel.set(true)}
+          />
+          <GtcToggleTouchButton
+            state={this.meanSeaLevelModeEnabled}
+            label="MSL"
+            onPressed={() => this.isFlightLevel.set(false)}
+          />
+        </div>
+      </div>
     );
   }
 }
