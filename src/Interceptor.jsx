@@ -5,7 +5,7 @@ import AcarsTabView, {
   getSettingsManager,
   GtcCpdlcAltitudeDialog,
 } from "./AcarsTabView";
-import { GtcViewLifecyclePolicy } from "@microsoft/msfs-wtg3000-gtc";
+import { GtcLoadFrequencyDialog, GtcViewKeys, GtcViewLifecyclePolicy } from "@microsoft/msfs-wtg3000-gtc";
 import { loadFuelAndBalance } from "./WeightAndBalance.mjs";
 import getAircraftIcao from "./AircraftModels.mjs";
 

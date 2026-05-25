@@ -15,6 +15,7 @@ import {
   NumberPad,
   GtcToggleTouchButton,
   GtcMessageDialog,
+  GtcLoadFrequencyDialog,
 } from "@microsoft/msfs-wtg3000-gtc";
 import {
   DefaultUserSettingManager,
@@ -29,8 +30,12 @@ import {
   SetSubject,
   MathUtils,
   UnitType,
+  ComSpacing,
+  RadioFrequencyFormatter,
 } from "@microsoft/msfs-sdk";
 import {
+  ComRadioSpacingSettingMode,
+  ComRadioUserSettings,
   DynamicList,
   ImgTouchButton,
   NumberUnitDisplay,
@@ -42,6 +47,7 @@ import {
   messageStateUpdate,
 } from "./Hoppie.mjs";
 import getAircraftIcao from "./AircraftModels.mjs";
+import { extractContactFrequency } from "./utils.mjs";
 
 const BASE = "coui://html_ui/garmin-3000-acars/assets";
 
@@ -180,14 +186,14 @@ class StatusTab extends DisplayComponent {
         type: GtcViewKeys.TextDialog,
       },
       {
-        label: "Destination Airport",
-        source: this.destinationAirport,
+        label: "Filed Dep Airport",
+        source: this.departureAirport,
         renderValue: (v) => (v && v.length ? v : "----"),
         type: GtcViewKeys.TextDialog,
       },
       {
-        label: "Filed Dep Airport",
-        source: this.departureAirport,
+        label: "Destination Airport",
+        source: this.destinationAirport,
         renderValue: (v) => (v && v.length ? v : "----"),
         type: GtcViewKeys.TextDialog,
       },
@@ -484,7 +490,8 @@ class CpdlcTab extends DisplayComponent {
             </span>
             <span>{message.from}</span>
             <span>
-              <span class={"strong"}>{convertUnixToHHMM(message.ts)}</span>UTC
+              <span class={"strong"}>{convertUnixToHHMM(message.ts)}</span>
+              <span class={"small"}>UTC</span>
             </span>
           </div>
         </GtcTouchButton>
@@ -509,6 +516,14 @@ class CpdlcTab extends DisplayComponent {
   }
 }
 class AcarsMessagePage extends GtcView {
+  comSpacingModeSetting = ComRadioUserSettings.getManager(
+    this.props.gtcService.bus,
+  ).getSetting("comRadioSpacing");
+  COM_25_FORMATTER = RadioFrequencyFormatter.createCom(ComSpacing.Spacing25Khz);
+  COM_833_FORMATTER = RadioFrequencyFormatter.createCom(
+    ComSpacing.Spacing833Khz,
+  );
+
   constructor(props) {
     super(props);
     this.message = Subject.create(null);
@@ -522,6 +537,11 @@ class AcarsMessagePage extends GtcView {
     this.option2 = Subject.create(null);
     this.option3 = Subject.create(null);
     this.sizeInterval = null;
+
+    this.contactFrequency = null;
+    this.contactLabel = Subject.create("");
+    this.hasWilco = Subject.create(false);
+    this.showFreqBtn = Subject.create(false);
   }
 
   startSizeMonitor() {
@@ -542,6 +562,44 @@ class AcarsMessagePage extends GtcView {
   }
 
   openMessage(message) {
+    this.hasWilco.set(!!message.respondSend);
+    this.contactFrequency = null;
+    this.contactLabel.set("");
+    this.showFreqBtn.set(false);
+
+    const freq = extractContactFrequency(message.content);
+    console.log("Extracted frequency:", freq);
+    if (freq !== null && message.type !== "send") {
+      this.contactFrequency = freq;
+
+      console.log("accepted negro");
+
+      const labelMatch = message.content.match(
+        /(?:CONTACT|MONITOR)\s+(.+?)\s+(?:ON\s+)?\d{3}\.\d{1,3}/i,
+      );
+
+      const labelMatchAt = message.content.match(
+        /(?:CONTACT|MONITOR)\s+(.+?)\s*@\d{3}\.\d{1,3}@/i,
+      );
+
+      console.log(labelMatch, labelMatchAt);
+
+      this.contactLabel.set(
+        labelMatch
+          ? labelMatch[1].trim()
+          : labelMatchAt
+            ? labelMatchAt[1].trim()
+            : "",
+      );
+      this.showFreqBtn.set(true);
+
+      console.log(
+        this.contactLabel.get(),
+        this.contactFrequency,
+        this.showFreqBtn.get(),
+      );
+    }
+
     this.message.set(message);
     this.from.set(message.from);
     this.content.set(message.content);
@@ -644,6 +702,10 @@ class AcarsMessagePage extends GtcView {
             this.canReply.set(false);
             const arr = [this.option1, this.option2, this.option3];
             message.options.forEach((v, i) => arr[i].set(v === e ? e : null));
+
+            if (e === "WILCO" && this.contactFrequency !== null) {
+              this.hasWilco.set(true);
+            }
           }
         }}
         class={"btn"}
@@ -652,6 +714,28 @@ class AcarsMessagePage extends GtcView {
         isEnabled={this.canReply}
       />
     );
+  }
+  async openLoadFreqDialog() {
+    if (this.contactFrequency === null) return;
+
+    const comSpacing =
+      this.comSpacingModeSetting.value ===
+      ComRadioSpacingSettingMode.Spacing8_33Khz
+        ? ComSpacing.Spacing833Khz
+        : ComSpacing.Spacing25Khz;
+    const formatter =
+      comSpacing === ComSpacing.Spacing833Khz
+        ? this.COM_833_FORMATTER
+        : this.COM_25_FORMATTER;
+
+    await this.props.gtcService
+      .openPopup(GtcViewKeys.LoadFrequencyDialog)
+      .ref.request({
+        type: "COM",
+        comChannelSpacing: comSpacing,
+        frequency: this.contactFrequency,
+        label: this.contactLabel.get(),
+      });
   }
   render() {
     const sidebarState = Subject.create(null);
@@ -667,14 +751,28 @@ class AcarsMessagePage extends GtcView {
           itemsPerPage={2}
           sidebarState={sidebarState}
           bus={this.bus}
-          listItemHeightPx={this.itemHeight}
+          listItemHeightPx={this.showFreqBtn.map((v) =>
+            v ? 290 : this.itemHeight + 30,
+          )}
           heightPx={
             this.props.gtcService.orientation === "horizontal" ? 380 : 260
           }
         >
           <GtcListItem>
             <div class={"content"}>
+              <span>
+                <span class={"strong"}>{convertUnixToHHMM(Date.now())}</span>
+                <span class={"small"}>UTC</span>
+              </span>
+              <br />
               <span ref={this.contentRef}>{this.content}</span>
+              <GtcTouchButton
+                class={"btn set-freq-btn"}
+                label={"Set FREQ"}
+                isVisible={this.showFreqBtn.map((v) => v)}
+                isEnabled={this.hasWilco}
+                onPressed={() => this.openLoadFreqDialog()}
+              />
             </div>
           </GtcListItem>
         </GtcList>
@@ -890,7 +988,8 @@ class AcarsSendTemplate extends GtcView {
               )}
             </span>
             <span>
-              <span class={"strong"}>{convertUnixToHHMM(Date.now())}</span>UTC
+              <span class={"strong"}>{convertUnixToHHMM(Date.now())}</span>
+              <span class={"small"}>UTC</span>
             </span>
           </div>
           <GtcTouchButton

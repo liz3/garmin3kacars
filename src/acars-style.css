@@ -152,9 +152,6 @@
   height: 15%;
   font-size: var(--acars-cpdlc-tab-message-status-font-size);
 }
-.acars-page-cpdlc-tab .message-item .status-row .strong {
-  font-weight: bold;
-}
 .acars-page-cpdlc-tab .message-item .text-block {
   font-size: var(--acars-cpdlc-tab-message-font-size);
   height: 80%;
@@ -352,7 +349,6 @@
 
 .acars-message-page {
   position: absolute;
-  left: calc(50% - var(--acars-message-page-width) / 2);
   top: var(--acars-message-page-top);
   width: var(--acars-message-page-width);
   height: var(--acars-message-page-height);
@@ -375,6 +371,18 @@
   border: var(--gtc-black-background-border);
   font-size: var(--acars-message-page-content-font-size);
   text-wrap: wrap;
+}
+.strong {
+  font-size: 25px;
+}
+.small {
+  font-size: 18px;
+}
+.acars-message-page .content-list .content .set-freq-btn {
+  position: absolute;
+  margin-top: 25px;
+  width: 200px;
+  height: 120px;
 }
 .acars-message-page .header {
   width: 100%;
@@ -399,7 +407,7 @@
 
 .gtc-horizontal .acars-message-page {
   --acars-message-page-top: 45px;
-  --acars-message-page-width: 700px;
+  --acars-message-page-width: 850px;
   --acars-message-page-height: 715px;
 
   --acars-message-page-button-icon-width: 100px;
@@ -627,68 +635,4 @@
 
 .acars-status-page-tab-left-button .touch-button-value-value {
   font-size: 1.3em;
-}
-
-.gtc-horizontal {
-  --numpad-touch-button-width: 136px;
-  --numpad-touch-button-height: 136px;
-  --numpad-touch-button-font-size: 86px;
-}
-
-.gtc-vertical {
-  --numpad-touch-button-width: 73px;
-  --numpad-touch-button-height: 73px;
-  --numpad-touch-button-font-size: 45px;
-}
-
-.numpad-touch-button {
-  width: var(--numpad-touch-button-width);
-  height: var(--numpad-touch-button-height);
-  font-size: var(--numpad-touch-button-font-size);
-}
-
-.gtc-horizontal .number-dialog.vnav-fpa-dialog {
-  --vnav-fpa-dialog-inactive-min-width: 133px;
-  --vnav-fpa-dialog-input-height: 44px;
-
-  --vnav-fpa-dialog-button-margin: 16px;
-  --vnav-fpa-dialog-button-width: 217px;
-  --vnav-fpa-dialog-button-height: 129px;
-  --vnav-fpa-dialog-button-font-size: 36px;
-}
-
-.gtc-vertical .number-dialog.vnav-fpa-dialog {
-  --vnav-fpa-dialog-inactive-min-width: 73px;
-  --vnav-fpa-dialog-input-height: 24px;
-
-  --vnav-fpa-dialog-button-margin: 5px;
-  --vnav-fpa-dialog-button-width: 125px;
-  --vnav-fpa-dialog-button-height: 66px;
-  --vnav-fpa-dialog-button-font-size: 16px;
-}
-
-.vnav-fpa-dialog .cursor-input-inactive {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.vnav-fpa-dialog .vnav-fpa-dialog-input-inactive {
-  text-align: right;
-  background-color: var(--g3000-color-cyan);
-  min-width: var(--vnav-fpa-dialog-inactive-min-width);
-  height: var(--vnav-fpa-dialog-input-height);
-}
-
-.vnav-fpa-dialog-input-cyan {
-  color: var(--g3000-color-cyan);
-}
-
-.vnav-fpa-dialog .remove-button {
-  position: absolute;
-  left: var(--vnav-fpa-dialog-button-margin);
-  bottom: var(--vnav-fpa-dialog-button-margin);
-  width: var(--vnav-fpa-dialog-button-width);
-  height: var(--vnav-fpa-dialog-button-height);
-  font-size: var(--vnav-fpa-dialog-button-font-size);
 }
