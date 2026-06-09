@@ -24,7 +24,7 @@ export const onMfdHomePage = (ctor, props, service) => {
     children: [
       rendered,
       <ImgTouchButton
-        label={"CPDLC"}
+        label={"ATC\nDatalink"}
         imgSrc={"coui://html_ui/garmin-3000-acars/assets/tower.png"}
         class={"gtc-directory-button"}
         onPressed={() => {
@@ -42,7 +42,7 @@ export const onSetupPageLiv2AirCj3 = (ctor, props, service) => {
     render() {
       return (
         <ImgTouchButton
-          label={"CPDLC"}
+          label={"ATC\nDatalink"}
           imgSrc={"coui://html_ui/garmin-3000-acars/assets/tower.png"}
           class={"gtc-directory-button"}
           onPressed={() => {

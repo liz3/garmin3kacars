@@ -538,6 +538,7 @@ class AcarsMessagePage extends GtcView {
     this.option3 = Subject.create(null);
     this.sizeInterval = null;
 
+    this.directToWaypoint = null;
     this.contactFrequency = null;
     this.contactLabel = Subject.create("");
     this.hasWilco = Subject.create(false);
@@ -561,18 +562,14 @@ class AcarsMessagePage extends GtcView {
     }
   }
 
-  openMessage(message) {
-    this.hasWilco.set(!!message.respondSend);
+  nextFreqButton() {
     this.contactFrequency = null;
     this.contactLabel.set("");
     this.showFreqBtn.set(false);
 
     const freq = extractContactFrequency(message.content);
-    console.log("Extracted frequency:", freq);
     if (freq !== null && message.type !== "send") {
       this.contactFrequency = freq;
-
-      console.log("accepted negro");
 
       const labelMatch = message.content.match(
         /(?:CONTACT|MONITOR)\s+(.+?)\s+(?:ON\s+)?\d{3}\.\d{1,3}/i,
@@ -582,8 +579,6 @@ class AcarsMessagePage extends GtcView {
         /(?:CONTACT|MONITOR)\s+(.+?)\s*@\d{3}\.\d{1,3}@/i,
       );
 
-      console.log(labelMatch, labelMatchAt);
-
       this.contactLabel.set(
         labelMatch
           ? labelMatch[1].trim()
@@ -592,13 +587,78 @@ class AcarsMessagePage extends GtcView {
             : "",
       );
       this.showFreqBtn.set(true);
-
-      console.log(
-        this.contactLabel.get(),
-        this.contactFrequency,
-        this.showFreqBtn.get(),
-      );
     }
+  }
+
+  directToButton() {
+    const directToMatch = message.content.match(
+      /PROCEED\s+DIRECT\s+(?:TO\s+)?([A-Z]{2,5})/i,
+    );
+
+    if (directToMatch && message.type !== "send") {
+      const waypoint = directToMatch[1].trim();
+
+      this.directToWaypoint = waypoint;
+    }
+  }
+
+  async openDirectToDialog() {
+    if (!this.directToWaypoint) return;
+
+    const waypoint = this.directToWaypoint;
+
+    const result = await this.props.gtcService
+      .openPopup(GtcViewKeys.MessageDialog1)
+      .ref.request({
+        message: `Import to Direct To page?`,
+        showRejectButton: true,
+        acceptButtonLabel: "Yes",
+        rejectButtonLabel: "No",
+      });
+
+    if (result.wasCancelled || result.payload !== true) return;
+
+    const plan = this.props.fms.getPrimaryFlightPlan();
+    let segmentIndex = undefined;
+    let segmentLegIndex = undefined;
+
+    for (let s = 0; s < plan.segmentCount; s++) {
+      const segment = plan.getSegment(s);
+      for (let l = 0; l < segment.legs.length; l++) {
+        if (segment.legs[l].name === waypoint) {
+          segmentIndex = s;
+          segmentLegIndex = l;
+          break;
+        }
+      }
+      if (segmentIndex !== undefined) break;
+    }
+
+    const directToPage = this.props.gtcService.changePageTo(
+      GtcViewKeys.DirectTo,
+    );
+
+    if (segmentIndex !== undefined) {
+      directToPage.ref.setWaypoint({ segmentIndex, segmentLegIndex });
+    } else {
+      directToPage.ref.setWaypoint({});
+    }
+
+    const sub = this.props.gtcService.bus
+      .getSubscriber()
+      .on("fplDirectToDataChanged")
+      .handle(() => {
+        sub.destroy();
+        // Redirect to messages page from direct to page
+        this.props.gtcService.changePageTo("ACARS_MESSAGE_PAGE");
+      });
+  }
+
+  openMessage(message) {
+    this.hasWilco.set(!!message.respondSend);
+
+    this.nextFreqButton();
+    this.directToButton();
 
     this.message.set(message);
     this.from.set(message.from);
@@ -705,6 +765,8 @@ class AcarsMessagePage extends GtcView {
 
             if (e === "WILCO" && this.contactFrequency !== null) {
               this.hasWilco.set(true);
+            } else if (e === "WILCO" && this.directToWaypoint !== null) {
+              setTimeout(() => this.openDirectToDialog(), 300);
             }
           }
         }}
@@ -1989,6 +2051,7 @@ class AcarsTabView extends GtcView {
             gtcService={gtcService}
             displayPaneIndex={displayPaneIndex}
             controlMode={controlMode}
+            fms={this.props.fms}
           />
         );
       },
