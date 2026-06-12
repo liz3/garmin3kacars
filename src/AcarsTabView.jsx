@@ -117,7 +117,7 @@ class StatusTab extends DisplayComponent {
       this.props.gtcService.orientation === "horizontal" ? "9px" : "18px";
     this.listRef = FSComponent.createRef();
     this.listItemHeight =
-      this.props.gtcService.orientation === "horizontal" ? 110 : 60;
+      this.props.gtcService.orientation === "horizontal" ? 110 : 65;
     this.facility = Subject.create("");
     this.flightId = Subject.create("");
     this.destinationAirport = Subject.create(
@@ -515,6 +515,88 @@ class CpdlcTab extends DisplayComponent {
     );
   }
 }
+
+class AdscTab extends DisplayComponent {
+  constructor() {
+    super(...arguments);
+  }
+
+  onResume() {
+    // for (const sub of this.subscriptions) {
+    //   sub.resume(true);
+    // }
+  }
+  /** @inheritDoc */
+  onPause() {
+    // for (const sub of this.subscriptions) {
+    //   sub.pause();
+    // }
+  }
+  onAfterRender(thisNode) {
+    this.thisNode = thisNode;
+  }
+  onGtcInteractionEvent() {
+    return false;
+  }
+  stateBtnPressed() {}
+  
+  async openEmergDialog() {
+    const result = await this.props.gtcService
+      .openPopup(GtcViewKeys.MessageDialog1)
+      .ref.request({
+        message: `Initiate ADS-C Emergency Mode?`,
+        showRejectButton: true,
+        acceptButtonLabel: "OK",
+        rejectButtonLabel: "Cancel",
+      });
+
+    if (result.wasCancelled || result.payload !== true) return;
+
+    this.enabledAdscEmergMode.set(true);
+  }
+
+  render() {
+    this.enabledAdsc = Subject.create(false);
+    this.enabledAdscEmergMode = Subject.create(false);
+    const sidebarState = Subject.create(null);
+    return (
+      <div class="acars-page-adsc-tab">
+        <div class="top-row">
+          <GtcToggleTouchButton
+            label="ADS-C Enabled"
+            class="left-col"
+            state={this.enabledAdsc}
+            onPressed={() => {
+              this.enabledAdsc.set(!this.enabledAdsc.get());
+            }}
+            isInList
+            gtcOrientation={this.props.gtcService.orientation}
+          />
+
+          <GtcToggleTouchButton
+            label="Emergency Mode"
+            class="right-col"
+            state={this.enabledAdscEmergMode}
+            onPressed={() => {
+              if (!this.enabledAdscEmergMode.get()) {
+                this.openEmergDialog();
+              } else {
+                this.enabledAdscEmergMode.set(!this.enabledAdscEmergMode.get());
+              }
+            }}
+            isInList
+            gtcOrientation={this.props.gtcService.orientation}
+          />
+        </div>
+
+        <div class="main-panel">
+          <span class="empty-message">No Active Connections</span>
+        </div>
+      </div>
+    );
+  }
+}
+
 class AcarsMessagePage extends GtcView {
   comSpacingModeSetting = ComRadioUserSettings.getManager(
     this.props.gtcService.bus,
@@ -1294,6 +1376,7 @@ class AcarsTabView extends GtcView {
     this.latestMessage = Subject.create(null);
     this.unreadCount = Subject.create(0);
     this.cpdlcTabLabel = Subject.create("CPDLC");
+    this.adscTabLabel = Subject.create("ADS-C");
     this.subscriptions.push(
       this.props.gtcService.bus
         .getSubscriber()
@@ -2104,6 +2187,7 @@ class AcarsTabView extends GtcView {
             this.cpdlcTabLabel,
             this.renderCpdlcTab.bind(this),
           )}
+          {this.renderTab(3, this.adscTabLabel, this.renderAdscTab.bind(this))}
         </TabbedContainer>
         <GtcTouchButton
           class={"acars-page-display-button"}
@@ -2155,6 +2239,16 @@ class AcarsTabView extends GtcView {
   renderCpdlcTab(contentRef, sidebarState) {
     return (
       <CpdlcTab
+        gtcService={this.props.gtcService}
+        ref={contentRef}
+        sidebarState={sidebarState}
+        fms={this.props.fms}
+      />
+    );
+  }
+  renderAdscTab(contentRef, sidebarState) {
+    return (
+      <AdscTab
         gtcService={this.props.gtcService}
         ref={contentRef}
         sidebarState={sidebarState}

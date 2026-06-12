@@ -33,9 +33,9 @@
   --acars-page-tab-container-width: 470px;
   --acars-page-tab-container-height: 380px;
   --acars-page-display-page-status-tab-padding: 12px 15px 17px 9px;
-  --acars-page-display-button-right-margin: 12px;
-  --acars-page-display-button-width: 80px;
-  --acars-page-display-button-height: 85px;
+  --acars-page-display-button-right-margin: 3px;
+  --acars-page-display-button-width: 95px;
+  --acars-page-display-button-height: 75px;
   --acars-page-display-page-status-tab-padding: 25px 30px 35px 18px;
 }
 
@@ -122,11 +122,17 @@
   width: 100%;
   height: 100%;
 }
-.acars-page-cpdlc-tab .message-item {
+.gtc-horizontal .acars-page-cpdlc-tab .message-item {
   width: 100%;
   height: 100%;
   font-size: 26px;
   padding: 15px;
+}
+.gtc-vertical .acars-page-cpdlc-tab .message-item {
+  width: 100%;
+  height: 100%;
+  font-size: 18px;
+  padding: 8px;
 }
 
 .acars-page-cpdlc-tab .message-item.unread-effect {
@@ -145,13 +151,19 @@
     #07121c;
 }
 
-.acars-page-cpdlc-tab .message-item .status-row {
+.gtc-horizontal .acars-page-cpdlc-tab .message-item .status-row {
   padding: 4px 8px;
   display: flex;
   justify-content: space-between;
   height: 15%;
   font-size: var(--acars-cpdlc-tab-message-status-font-size);
 }
+.gtc-vertical .acars-page-cpdlc-tab .message-item .status-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--acars-cpdlc-tab-message-status-font-size);
+}
+
 .acars-page-cpdlc-tab .message-item .text-block {
   font-size: var(--acars-cpdlc-tab-message-font-size);
   height: 80%;
@@ -170,8 +182,8 @@
   flex-shrink: 0;
 }
 .gtc-vertical .acars-page-cpdlc-tab .message-item .cpdlc-state-icon {
-  width: 98px;
-  height: 53px;
+  width: 49px;
+  height: 26.5px;
   object-fit: contain;
   flex-shrink: 0;
 }
@@ -228,7 +240,8 @@
 
 .gtc-vertical .acars-settings {
   --acars-settings-top: 23px;
-  --acars-settings-width: 290px;
+  /* --acars-settings-width: 290px; */
+  --acars-settings-width: 445px;
   --acars-settings-height: 385px;
 
   --acars-settings-button-icon-width: 50px;
@@ -331,7 +344,7 @@
 
 .gtc-vertical .acars-message-dialog {
   --acars-message-popup-top: 23px;
-  --acars-message-popup-width: 320px;
+  --acars-message-popup-width: 445px;
   --acars-message-popup-height: 385px;
 
   --acars-message-popup-button-icon-width: 50px;
@@ -372,12 +385,21 @@
   font-size: var(--acars-message-page-content-font-size);
   text-wrap: wrap;
 }
-.strong {
+.gtc-horizontal .strong {
   font-size: 25px;
 }
-.small {
+.gtc-horizontal .small {
   font-size: 18px;
 }
+
+.gtc-vertical .strong {
+  font-size: 18px;
+}
+
+.gtc-vertical .small {
+  font-size: 12px;
+}
+
 .acars-message-page .content-list .content .set-freq-btn {
   position: absolute;
   margin-top: 25px;
@@ -635,4 +657,71 @@
 
 .acars-status-page-tab-left-button .touch-button-value-value {
   font-size: 1.3em;
+}
+
+.acars-page-adsc-tab {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  padding: var(--acars-adsc-tab-padding);
+  display: flex;
+  flex-direction: column;
+}
+
+.gtc-horizontal .acars-page-adsc-tab {
+  --acars-adsc-tab-padding: 18px 18px 16px 18px;
+  --acars-adsc-tab-top-row-height: 74px;
+  --acars-adsc-tab-top-gap: 8px;
+  --acars-adsc-tab-title-font-size: 22px;
+  --acars-adsc-tab-message-font-size: 30px;
+  --acars-adsc-tab-panel-radius: 8px;
+  --acars-adsc-tab-panel-border: 2px;
+}
+
+.gtc-vertical .acars-page-adsc-tab {
+  --acars-adsc-tab-padding: 8px 8px 8px 8px;
+  --acars-adsc-tab-top-row-height: 68px;
+  --acars-adsc-tab-top-gap: 10px;
+  --acars-adsc-tab-title-font-size: 13px;
+  --acars-adsc-tab-message-font-size: 18px;
+  --acars-adsc-tab-panel-radius: 4px;
+  --acars-adsc-tab-panel-border: 1px;
+}
+
+.acars-page-adsc-tab .top-row {
+  display: flex;
+  gap: var(--acars-adsc-tab-top-gap);
+  height: var(--acars-adsc-tab-top-row-height);
+  margin-bottom: var(--acars-adsc-tab-top-gap);
+}
+
+.acars-page-adsc-tab .top-row .left-col,
+.acars-page-adsc-tab .top-row .right-col {
+  flex: 1;
+  border: var(--acars-adsc-tab-panel-border) solid rgba(255, 255, 255, 0.75);
+  border-radius: var(--acars-adsc-tab-panel-radius);
+}
+
+.acars-page-adsc-tab .top-row .left-col .touch-button-label,
+.acars-page-adsc-tab .top-row .right-col .touch-button-label {
+  font-size: var(--acars-adsc-tab-title-font-size);
+  font-weight: 600;
+}
+
+.acars-page-adsc-tab .main-panel {
+  flex: 1;
+  border: calc(var(--acars-adsc-tab-panel-border) + 1px) solid #8fc7dc;
+  border-radius: var(--acars-adsc-tab-panel-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.acars-page-adsc-tab .empty-message {
+  color: white;
+  font-size: var(--acars-adsc-tab-message-font-size);
+  font-weight: 600;
 }
