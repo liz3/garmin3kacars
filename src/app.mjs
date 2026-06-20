@@ -65,6 +65,7 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
         if (
           ctor.name === "GtcTouchButton" &&
           props.label === "Set Empty\nWeight"
+          && !title.includes("Phenom 300E")
         ) {
           return onWeightPage(
             ctor,
