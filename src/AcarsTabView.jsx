@@ -32,6 +32,7 @@ import {
   UnitType,
   ComSpacing,
   RadioFrequencyFormatter,
+  FacilitySearchType,
 } from "@microsoft/msfs-sdk";
 import {
   ComRadioSpacingSettingMode,
@@ -186,16 +187,16 @@ class StatusTab extends DisplayComponent {
         type: GtcViewKeys.TextDialog,
       },
       {
-        label: "Filed Dep Airport",
-        source: this.departureAirport,
-        renderValue: (v) => (v && v.length ? v : "----"),
-        type: GtcViewKeys.TextDialog,
-      },
-      {
         label: "Destination Airport",
         source: this.destinationAirport,
         renderValue: (v) => (v && v.length ? v : "----"),
-        type: GtcViewKeys.TextDialog,
+        type: GtcViewKeys.WaypointDialog,
+      },
+      {
+        label: "Filed Dep Airport",
+        source: this.departureAirport,
+        renderValue: (v) => (v && v.length ? v : "----"),
+        type: GtcViewKeys.WaypointDialog,
       },
       {
         label: "Filed Dep Time",
@@ -207,8 +208,8 @@ class StatusTab extends DisplayComponent {
                 .toString()
                 .padStart(2, "0")}:${Math.floor(v % 60)
                 .toString()
-                .padStart(2, "0")}`
-            : "__:__";
+                .padStart(2, "0")} UTC`
+            : "__:__ UTC";
         },
         type: GtcViewKeys.DurationDialog1,
       },
@@ -275,33 +276,45 @@ class StatusTab extends DisplayComponent {
             listItemHeightPx={this.listItemHeight}
           >
             {this.itemList.map((e) => (
-              <GtcListItem key={e.label}>
+              <GtcListItem hideBorder key={e.label}>
                 <GtcValueTouchButton
                   class={"acars-status-page-tab-left-list-item"}
                   state={e.source}
                   label={e.label}
                   renderValue={e.renderValue}
                   onPressed={async () => {
+                    const requestParams = {
+                      initialValue: e.source.get(),
+                      initialInputText: e.source.get(),
+                    };
+
+                    if (e.type === GtcViewKeys.WaypointDialog) {
+                      requestParams.searchType = FacilitySearchType.Airport;
+                      requestParams.emptyLabelText = e.label;
+                    } else {
+                      requestParams.label = e.label;
+                      requestParams.allowSpaces = false;
+                      requestParams.maxLength = 20;
+                    }
+
                     const result = await this.props.gtcService
                       .openPopup(e.type, "normal", "hide")
-                      .ref.request({
-                        label: e.label,
-                        allowSpaces: false,
-                        maxLength: 20,
-                        initialValue: e.source.get(),
-                        initialInputText: e.source.get(),
-                      });
+                      .ref.request(requestParams);
+
                     if (result.wasCancelled) {
                       return;
                     }
-                    this.props.gtcService.bus
-                      .getPublisher()
-                      .pub(
-                        "acars_status_param",
-                        { label: e.label, value: result.payload },
-                        true,
-                        false,
-                      );
+
+                    this.props.gtcService.bus.getPublisher().pub(
+                      "acars_status_param",
+                      {
+                        label: e.label,
+                        value:
+                          result.payload?.icaoStruct?.ident ?? result.payload,
+                      },
+                      true,
+                      false,
+                    );
                   }}
                   isInList={true}
                 />
@@ -445,11 +458,12 @@ class CpdlcTab extends DisplayComponent {
 
     // Icon part
     const getIcon = (s) => {
-      if (s.includes("Viewed")) return `${BASE}/dl_closed.png`;
-      if (s.includes("Incoming")) return `${BASE}/dl_standby.png`;
-      return `${BASE}/dl_sent.png`;
+      if (s.includes("Closed")) return `${BASE}/dl_closed.png`;
+      if (s.includes("Incoming") || s.includes("Need Response"))
+        return `${BASE}/dl_standby.png`;
+      if (s.includes("Send")) return `${BASE}/dl_sent.png`;
+      return `${BASE}/dl_standby.png`;
     };
-
     // Unread effect part
     const cssClass = SetSubject.create(["message-item"]);
 
@@ -466,7 +480,7 @@ class CpdlcTab extends DisplayComponent {
     });
 
     return (
-      <GtcListItem>
+      <GtcListItem class={"message-list-item"} hideBorder>
         <GtcTouchButton
           onPressed={() => {
             this.props.gtcService
@@ -519,6 +533,25 @@ class CpdlcTab extends DisplayComponent {
 class AdscTab extends DisplayComponent {
   constructor() {
     super(...arguments);
+    this.listRef = FSComponent.createRef();
+    this.listItemHeight =
+      this.props.gtcService.orientation === "horizontal" ? 130 : 70;
+
+    this.oca = [
+      {
+        station: "BIRD",
+        name: "Reykjavik",
+        contract_type: "periodic",
+        report_period: 5 * 60,
+        next_report: null,
+        request_data_group: [
+          "Basic ADS",
+          "Earth Reference",
+          "Air Reference",
+          "Airframe ID",
+        ],
+      },
+    ];
   }
 
   onResume() {
@@ -539,7 +572,7 @@ class AdscTab extends DisplayComponent {
     return false;
   }
   stateBtnPressed() {}
-  
+
   async openEmergDialog() {
     const result = await this.props.gtcService
       .openPopup(GtcViewKeys.MessageDialog1)
@@ -555,10 +588,88 @@ class AdscTab extends DisplayComponent {
     this.enabledAdscEmergMode.set(true);
   }
 
+  async disableAdsc() {
+    const result = await this.props.gtcService
+      .openPopup(GtcViewKeys.MessageDialog1)
+      .ref.request({
+        message: `Terminate all ADS-C connections and contracts?`,
+        showRejectButton: true,
+        acceptButtonLabel: "OK",
+        rejectButtonLabel: "Cancel",
+      });
+
+    if (result.wasCancelled || result.payload !== true) return;
+
+    this.enabledAdsc.set(false);
+  }
+
+  adscContract(station) {
+    try {
+      const client = this.props.client.get();
+      if (!client) return;
+
+      const latRad = SimVar.GetSimVarValue("PLANE LATITUDE", "radians");
+      const lonRad = SimVar.GetSimVarValue("PLANE LONGITUDE", "radians");
+      const altFt = SimVar.GetSimVarValue("PLANE ALTITUDE", "feet");
+      const headingMagRad = SimVar.GetSimVarValue(
+        "PLANE HEADING DEGREES MAGNETIC",
+        "radians",
+      );
+      const gs = Math.round(SimVar.GetSimVarValue("GROUND VELOCITY", "knots"));
+
+      const lat = (latRad * (180 / Math.PI)).toFixed(5);
+      const lon = (lonRad * (180 / Math.PI)).toFixed(5);
+      const alt = altFt.toFixed(0);
+      const hdg = Math.round(
+        (((headingMagRad * (180 / Math.PI)) % 360) + 360) % 360,
+      );
+
+      const response = client.sendAdsc(station, lat, lon, alt, hdg, gs);
+      console.log(response);
+    } catch (error) {
+      console.error("Error sending ADS-C report:", error);
+    }
+  }
+
+  renderItem(items) {
+    const sidebarState = Subject.create(null);
+
+    if (items.length === 0) {
+      return <span class="empty-message">No Active Connections</span>;
+    }
+
+    return (
+      <GtcList
+        class={"acars-adsc-items"}
+        ref={this.listRef}
+        listItemSpacingPx={1}
+        sidebarState={sidebarState}
+        bus={this.bus}
+        itemsPerPage={4}
+        listItemHeightPx={this.listItemHeight}
+      >
+        {items.map((e) => (
+          <GtcListItem hideBorder key={e.title}>
+            <GtcTouchButton
+              class={"acars-settings-button"}
+              label={`Connection with ${e.station}`}
+              isInList={true}
+              onPressed={() => {
+                this.props.gtcService
+                  .openPopup("ADSC_CONTRACT", "normal", "hide")
+                  .ref.openForm(e);
+              }}
+            />
+          </GtcListItem>
+        ))}
+      </GtcList>
+    );
+  }
+
   render() {
     this.enabledAdsc = Subject.create(false);
     this.enabledAdscEmergMode = Subject.create(false);
-    const sidebarState = Subject.create(null);
+
     return (
       <div class="acars-page-adsc-tab">
         <div class="top-row">
@@ -567,7 +678,12 @@ class AdscTab extends DisplayComponent {
             class="left-col"
             state={this.enabledAdsc}
             onPressed={() => {
-              this.enabledAdsc.set(!this.enabledAdsc.get());
+              if (this.enabledAdsc.get()) {
+                this.disableAdsc();
+              } else {
+                this.enabledAdsc.set(!this.enabledAdsc.get());
+                // this.adscContract("TEST"); NEED TO BE REWORK FOR PERIODIC ADSC CONTRACTS
+              }
             }}
             isInList
             gtcOrientation={this.props.gtcService.orientation}
@@ -589,9 +705,7 @@ class AdscTab extends DisplayComponent {
           />
         </div>
 
-        <div class="main-panel">
-          <span class="empty-message">No Active Connections</span>
-        </div>
+        <div class="main-panel">{this.renderItem(this.oca)}</div>
       </div>
     );
   }
@@ -625,6 +739,13 @@ class AcarsMessagePage extends GtcView {
     this.contactLabel = Subject.create("");
     this.hasWilco = Subject.create(false);
     this.showFreqBtn = Subject.create(false);
+    this.options = [
+      { title: "WILCO" },
+      { title: "Unable" },
+      { title: "Unable due to weather" },
+      { title: "Unable due to aircraft performance" },
+    ];
+    this.selectedResponse = Subject.create("WILCO");
   }
 
   startSizeMonitor() {
@@ -632,7 +753,7 @@ class AcarsMessagePage extends GtcView {
     this.sizeInterval = setInterval(() => {
       const elem = this.contentRef.getOrDefault();
       if (!elem) return;
-      const height = elem.getBoundingClientRect().height + 30;
+      const height = elem.getBoundingClientRect().height + 60;
       if (this.itemHeight.get() !== height) this.itemHeight.set(height);
     }, 250);
   }
@@ -644,7 +765,7 @@ class AcarsMessagePage extends GtcView {
     }
   }
 
-  nextFreqButton() {
+  nextFreqButton(message) {
     this.contactFrequency = null;
     this.contactLabel.set("");
     this.showFreqBtn.set(false);
@@ -672,7 +793,7 @@ class AcarsMessagePage extends GtcView {
     }
   }
 
-  directToButton() {
+  directToButton(message) {
     const directToMatch = message.content.match(
       /PROCEED\s+DIRECT\s+(?:TO\s+)?([A-Z]{2,5})/i,
     );
@@ -686,13 +807,12 @@ class AcarsMessagePage extends GtcView {
 
   async openDirectToDialog() {
     if (!this.directToWaypoint) return;
-
     const waypoint = this.directToWaypoint;
 
     const result = await this.props.gtcService
       .openPopup(GtcViewKeys.MessageDialog1)
       .ref.request({
-        message: `Import to Direct To page?`,
+        message: "Import to Direct To page?",
         showRejectButton: true,
         acceptButtonLabel: "Yes",
         rejectButtonLabel: "No",
@@ -721,26 +841,17 @@ class AcarsMessagePage extends GtcView {
     );
 
     if (segmentIndex !== undefined) {
-      directToPage.ref.setWaypoint({ segmentIndex, segmentLegIndex });
+      directToPage.ref.setWaypoint(segmentIndex, segmentLegIndex);
     } else {
-      directToPage.ref.setWaypoint({});
+      directToPage.ref.setWaypoint();
     }
-
-    const sub = this.props.gtcService.bus
-      .getSubscriber()
-      .on("fplDirectToDataChanged")
-      .handle(() => {
-        sub.destroy();
-        // Redirect to messages page from direct to page
-        this.props.gtcService.changePageTo("ACARS_MESSAGE_PAGE");
-      });
   }
 
   openMessage(message) {
     this.hasWilco.set(!!message.respondSend);
 
-    this.nextFreqButton();
-    this.directToButton();
+    this.nextFreqButton(message);
+    this.directToButton(message);
 
     this.message.set(message);
     this.from.set(message.from);
@@ -810,46 +921,38 @@ class AcarsMessagePage extends GtcView {
           const e = option.get();
           const message = this.message.get();
           if (message.respondSend) return;
-          const result = await this.props.gtcService
-            .openPopup(GtcViewKeys.MessageDialog1)
-            .ref.request({
-              message: `Respond With ${e}?`,
-              showRejectButton: true,
-              acceptButtonLabel: "Send",
-              rejectButtonLabel: "Cancel",
-            });
-          if (!result.wasCancelled && result.payload === true) {
-            if (window.acarsSide === "primary") message.response(e);
-            else
-              this.props.gtcService.bus.getPublisher().pub(
-                "acars_message_ack",
-                {
-                  e,
-                  id: message._id,
-                },
-                true,
-                false,
-              );
-            this.bus.getPublisher().pub(
-              "acars_message_read_state",
+
+          if (window.acarsSide === "primary") message.response(e);
+          else
+            this.props.gtcService.bus.getPublisher().pub(
+              "acars_message_ack",
               {
+                e,
                 id: message._id,
-                state: "Closed",
-                option: e,
               },
               true,
               false,
             );
-            this.message.set(message);
-            this.canReply.set(false);
-            const arr = [this.option1, this.option2, this.option3];
-            message.options.forEach((v, i) => arr[i].set(v === e ? e : null));
+          this.bus.getPublisher().pub(
+            "acars_message_read_state",
+            {
+              id: message._id,
+              state: "Closed",
+              option: e,
+            },
+            true,
+            false,
+          );
+          this.message.set(message);
+          this.canReply.set(false);
+          const arr = [this.option1, this.option2, this.option3];
+          message.options.forEach((v, i) => arr[i].set(v === e ? e : null));
 
-            if (e === "WILCO" && this.contactFrequency !== null) {
-              this.hasWilco.set(true);
-            } else if (e === "WILCO" && this.directToWaypoint !== null) {
-              setTimeout(() => this.openDirectToDialog(), 300);
-            }
+          if (e === "WILCO" && this.contactFrequency !== null) {
+            // this.hasWilco.set(true);
+            setTimeout(() => this.openLoadFreqDialog(), 300);
+          } else if (e === "WILCO" && this.directToWaypoint !== null) {
+            setTimeout(() => this.openDirectToDialog(), 300);
           }
         }}
         class={"btn"}
@@ -861,6 +964,17 @@ class AcarsMessagePage extends GtcView {
   }
   async openLoadFreqDialog() {
     if (this.contactFrequency === null) return;
+
+    const result = await this.props.gtcService
+      .openPopup(GtcViewKeys.MessageDialog1)
+      .ref.request({
+        message: "Choose radio to tune?",
+        showRejectButton: true,
+        acceptButtonLabel: "Yes",
+        rejectButtonLabel: "No",
+      });
+
+    if (result.wasCancelled || result.payload !== true) return;
 
     const comSpacing =
       this.comSpacingModeSetting.value ===
@@ -881,41 +995,51 @@ class AcarsMessagePage extends GtcView {
         label: this.contactLabel.get(),
       });
   }
+
   render() {
     const sidebarState = Subject.create(null);
     return (
       <div class={"acars-message-page"}>
-        <div class={"header"}>
-          <span>{this.from}</span>
-        </div>
         <GtcList
           class={"content-list"}
           ref={this.messageListRef}
-          listItemSpacingPx={1}
-          itemsPerPage={2}
+          listItemSpacingPx={12}
+          itemsPerPage={3}
           sidebarState={sidebarState}
           bus={this.bus}
-          listItemHeightPx={this.showFreqBtn.map((v) =>
-            v ? 290 : this.itemHeight + 30,
-          )}
+          listItemHeightPx={this.itemHeight}
           heightPx={
             this.props.gtcService.orientation === "horizontal" ? 380 : 260
           }
         >
-          <GtcListItem>
-            <div class={"content"}>
+          <GtcListItem hideBorder>
+            <div class={"content content-from"}>
+              <span ref={this.contentRef}>{this.content}</span>
+              <br />
               <span>
                 <span class={"strong"}>{convertUnixToHHMM(Date.now())}</span>
                 <span class={"small"}>UTC</span>
               </span>
-              <br />
-              <span ref={this.contentRef}>{this.content}</span>
-              <GtcTouchButton
-                class={"btn set-freq-btn"}
-                label={"Set FREQ"}
-                isVisible={this.showFreqBtn.map((v) => v)}
-                isEnabled={this.hasWilco}
-                onPressed={() => this.openLoadFreqDialog()}
+            </div>
+          </GtcListItem>
+          <GtcListItem hideBorder>
+            <div class="answer-wrapper">
+              <GtcListSelectTouchButton
+                class="content answer"
+                gtcService={this.props.gtcService}
+                listDialogKey={GtcViewKeys.ListDialog1}
+                state={this.selectedResponse}
+                label="Response"
+                renderValue={(v) => v}
+                onSelected={(v) => this.selectedResponse.set(v)}
+                listParams={{
+                  title: "Response",
+                  inputData: this.options.map((op) => ({
+                    value: op.title,
+                    labelRenderer: () => op.title,
+                  })),
+                }}
+                isInList={true}
               />
             </div>
           </GtcListItem>
@@ -1168,6 +1292,99 @@ class AcarsSendTemplate extends GtcView {
               }
             }}
           />
+        </div>
+      </div>
+    );
+  }
+}
+
+class AdscContract extends GtcView {
+  constructor(props) {
+    super(props);
+
+    this.station = Subject.create("----");
+    this.stationName = Subject.create("----");
+    this.contractType = Subject.create("----");
+    this.reportPeriod = Subject.create("----");
+    this.nextReport = Subject.create("----");
+    this.requestData = Subject.create("----");
+    this.groupsText = Subject.create("");
+  }
+
+  onPause() {}
+
+  onAfterRender() {
+    this._title.set("Connection Details");
+  }
+
+  onGtcInteractionEvent() {
+    return false;
+  }
+
+  openForm(contract) {
+    this.station.set(contract.station ?? "----");
+    this.stationName.set(contract.name ?? "----");
+
+    const type = contract.contract_type ?? "----";
+    this.contractType.set(type.charAt(0).toUpperCase() + type.slice(1));
+
+    this.reportPeriod.set(
+      contract.report_period != null
+        ? `${Math.round(contract.report_period / 60)} minutes`
+        : "----",
+    );
+
+    this.nextReport.set(
+      contract.next_report != null
+        ? `${Math.round(contract.next_report / 60)} minutes`
+        : "----",
+    );
+
+    const groups = Array.isArray(contract.request_data_group)
+      ? contract.request_data_group
+      : [];
+    this.groupsText.set(groups.join("\n"));
+  }
+
+  renderRow(label, valueSubject) {
+    return (
+      <div class="adsc-contract-row">
+        <span class="adsc-contract-label">{label}</span>
+        <span class="adsc-contract-value">{valueSubject}</span>
+      </div>
+    );
+  }
+
+  render() {
+    return (
+      <div class="acars-adsc-contract-page">
+        <div class="adsc-contract-mode-title">
+          <span>Normal Mode</span>
+        </div>
+
+        <div class="adsc-contract-row adsc-contract-row-multiline">
+          <span class="adsc-contract-label">Recipient Facilities:</span>
+          <div class="adsc-contract-value-col">
+            <span class="adsc-contract-value adsc-contract-value-big">
+              {this.station}
+            </span>
+            <span class="adsc-contract-value adsc-contract-value-small uppercase">
+              {this.stationName}
+            </span>
+          </div>
+        </div>
+
+        {this.renderRow("Contract Type(s):", this.contractType)}
+        {this.renderRow("Report Period:", this.reportPeriod)}
+        {this.renderRow("Next Report:", this.nextReport)}
+
+        <div class="adsc-contract-row adsc-contract-row-multiline">
+          <span class="adsc-contract-label">{"Requested Data\nGroup(s):"}</span>
+          <div class="adsc-contract-value-col">
+            <span class="adsc-contract-value" style="white-space: pre-line;">
+              {this.groupsText}
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -1717,7 +1934,7 @@ class AcarsTabView extends GtcView {
             allowSpaces: false,
             maxLength: 12,
             type: GtcViewKeys.DurationDialog1,
-            displayFallback: "--:--",
+            displayFallback: "--:-- UTC",
             transform: (v) => `${v / 60}:${v % 60}`,
             validate: (v) => v.length,
           },
@@ -1726,7 +1943,7 @@ class AcarsTabView extends GtcView {
             allowSpaces: false,
             maxLength: 3,
             type: GtcViewKeys.TextDialog,
-            displayFallback: "FL---",
+            displayFallback: "FL___",
             validate: (v) => v.length && !Number.isNaN(Number.parseInt(v)),
           },
           {
@@ -1903,15 +2120,18 @@ class AcarsTabView extends GtcView {
         title: "Request Level Change",
         onSend: async (d) => {
           const client = this.client.get();
-          if (!client || !client.active_station) return false;
+          if (!client || !client.activestation) return false;
+
           const flValue = d.FL?.isFlightLevel
-            ? String(d.FL.altitudeFeet / 100)
-            : String(d.FL.altitudeFeet);
+            ? `FL${String(Math.round(d.FL.altitudeFeet / 100)).padStart(3, "0")}`
+            : `${Math.round(d.FL.altitudeFeet)}FT`;
+
           return client.sendLevelChange(
             flValue,
-            d.Change === "Climb",
-            d.Reason,
-            d.FreeText,
+            d["Change"],
+            d["Climb"],
+            d["Reason"],
+            d["FreeText"],
           );
         },
         freeText: false,
@@ -1920,9 +2140,9 @@ class AcarsTabView extends GtcView {
           {
             name: "Request Level",
             type: "ACARS_ENTRY_ALTITUDE",
-            displayFallback: "FL---",
+            displayFallback: "FL___",
             renderValue: (v) => {
-              if (!v) return "FL---";
+              if (!v) return "FL___";
               return v.isFlightLevel
                 ? `FL${String(v.altitudeFeet / 100).padStart(3, "0")}`
                 : `${v.altitudeFeet}FT`;
@@ -2110,6 +2330,22 @@ class AcarsTabView extends GtcView {
     );
     this.props.gtcService.registerView(
       GtcViewLifecyclePolicy.Transient,
+      "ADSC_CONTRACT",
+      "MFD",
+      (gtcService, controlMode, displayPaneIndex) => {
+        return (
+          <AdscContract
+            gtcService={gtcService}
+            displayPaneIndex={displayPaneIndex}
+            controlMode={controlMode}
+            client={this.client}
+          />
+        );
+      },
+      this.displayPaneIndex,
+    );
+    this.props.gtcService.registerView(
+      GtcViewLifecyclePolicy.Transient,
       "ACARS_MESSAGE_OPT",
       "MFD",
       (gtcService, controlMode, displayPaneIndex) => {
@@ -2253,6 +2489,7 @@ class AcarsTabView extends GtcView {
         ref={contentRef}
         sidebarState={sidebarState}
         fms={this.props.fms}
+        client={this.client}
       />
     );
   }
