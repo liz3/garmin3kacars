@@ -422,14 +422,20 @@ class CpdlcTab extends DisplayComponent {
       .getSubscriber()
       .on("acars_message_read_state")
       .handle((e) => {
-        const message = this.messages
+        const index = this.messages
           .getArray()
-          .find((msg) => e.id === msg._id);
-        if (message) {
-          message.state.set(e.state);
-          message.viewed = true;
-          if (e.state === "Closed") message.respondSend = e.option;
+          .findIndex((msg) => e.id === msg._id);
+        if (index === -1) return;
+        const message = this.messages.getArray()[index];
+
+        if (e.state === "Deleted") {
+          this.messages.removeAt(index);
+          return;
         }
+
+        message.state.set(e.state);
+        message.viewed = true;
+        if (e.state === "Closed") message.respondSend = e.option;
       });
   }
   onResume() {
@@ -458,11 +464,11 @@ class CpdlcTab extends DisplayComponent {
 
     // Icon part
     const getIcon = (s) => {
-      if (s.includes("Closed")) return `${BASE}/dl_closed.png`;
+      if (s.includes("Closed")) return `${BASE}/dl_closed.svg`;
       if (s.includes("Incoming") || s.includes("Need Response"))
-        return `${BASE}/dl_standby.png`;
-      if (s.includes("Send")) return `${BASE}/dl_sent.png`;
-      return `${BASE}/dl_standby.png`;
+        return `${BASE}/ul_need_response_unread.svg`;
+      if (s.includes("Send")) return `${BASE}/dl_sent.svg`;
+      return `${BASE}/ul_need_response_read.svg`;
     };
     // Unread effect part
     const cssClass = SetSubject.create(["message-item"]);
@@ -739,12 +745,6 @@ class AcarsMessagePage extends GtcView {
     this.contactLabel = Subject.create("");
     this.hasWilco = Subject.create(false);
     this.showFreqBtn = Subject.create(false);
-    this.options = [
-      { title: "WILCO" },
-      { title: "Unable" },
-      { title: "Unable due to weather" },
-      { title: "Unable due to aircraft performance" },
-    ];
     this.selectedResponse = Subject.create("WILCO");
   }
 
@@ -914,53 +914,47 @@ class AcarsMessagePage extends GtcView {
     this._title.set("CPDLC Thread");
     this.startSizeMonitor();
   }
-  renderOptionsItem(option) {
-    return (
-      <GtcTouchButton
-        onPressed={async () => {
-          const e = option.get();
-          const message = this.message.get();
-          if (message.respondSend) return;
+  optionsItem(option) {
+    const e = option.get();
+    const message = this.message.get();
+    if (message.respondSend) return;
 
-          if (window.acarsSide === "primary") message.response(e);
-          else
-            this.props.gtcService.bus.getPublisher().pub(
-              "acars_message_ack",
-              {
-                e,
-                id: message._id,
-              },
-              true,
-              false,
-            );
-          this.bus.getPublisher().pub(
-            "acars_message_read_state",
-            {
-              id: message._id,
-              state: "Closed",
-              option: e,
-            },
-            true,
-            false,
-          );
-          this.message.set(message);
-          this.canReply.set(false);
-          const arr = [this.option1, this.option2, this.option3];
-          message.options.forEach((v, i) => arr[i].set(v === e ? e : null));
-
-          if (e === "WILCO" && this.contactFrequency !== null) {
-            // this.hasWilco.set(true);
-            setTimeout(() => this.openLoadFreqDialog(), 300);
-          } else if (e === "WILCO" && this.directToWaypoint !== null) {
-            setTimeout(() => this.openDirectToDialog(), 300);
-          }
-        }}
-        class={"btn"}
-        isVisible={option}
-        label={option}
-        isEnabled={this.canReply}
-      />
+    if (window.acarsSide === "primary") message.response(e);
+    else
+      this.props.gtcService.bus.getPublisher().pub(
+        "acars_message_ack",
+        {
+          e,
+          id: message._id,
+        },
+        true,
+        false,
+      );
+    this.bus.getPublisher().pub(
+      "acars_message_read_state",
+      {
+        id: message._id,
+        state: "Closed",
+        option: e,
+      },
+      true,
+      false,
     );
+    this.message.set(message);
+    this.canReply.set(false);
+    const arr = [this.option1, this.option2, this.option3];
+    message.options.forEach((v, i) => arr[i].set(v === e ? e : null));
+
+    if (e === "WILCO") {
+      this.hasWilco.set(true);
+      const action =
+        this.contactFrequency !== null
+          ? () => this.openLoadFreqDialog()
+          : this.directToWaypoint !== null
+            ? () => this.openDirectToDialog()
+            : null;
+      if (action) setTimeout(action, 300);
+    }
   }
   async openLoadFreqDialog() {
     if (this.contactFrequency === null) return;
@@ -1013,7 +1007,7 @@ class AcarsMessagePage extends GtcView {
           }
         >
           <GtcListItem hideBorder>
-            <div class={"content content-from"}>
+            <div class={`content content-from`}>
               <span ref={this.contentRef}>{this.content}</span>
               <br />
               <span>
@@ -1031,23 +1025,71 @@ class AcarsMessagePage extends GtcView {
                 state={this.selectedResponse}
                 label="Response"
                 renderValue={(v) => v}
-                onSelected={(v) => this.selectedResponse.set(v)}
+                onSelected={(v) => this.selectedResponse.set(v.get())}
                 listParams={{
                   title: "Response",
-                  inputData: this.options.map((op) => ({
-                    value: op.title,
-                    labelRenderer: () => op.title,
+                  inputData: [this.option1, this.option2].map((op) => ({
+                    value: op,
+                    labelRenderer: () => op.get(),
                   })),
                 }}
                 isInList={true}
+                isVisible={this.canReply}
               />
             </div>
           </GtcListItem>
         </GtcList>
         <div class={"options"}>
-          {this.renderOptionsItem(this.option1)}
-          {this.renderOptionsItem(this.option2)}
-          {this.renderOptionsItem(this.option3)}
+          {/* Standby */}
+          <GtcTouchButton
+            onPressed={async () => this.optionsItem(this.option3)}
+            class={"btn"}
+            label={"Standby"}
+            isVisible={this.canReply}
+          />
+          {/* Delete */}
+          <GtcTouchButton
+            onPressed={async () => {
+              const message = this.message.get();
+              this.bus
+                .getPublisher()
+                .pub(
+                  "acars_message_read_state",
+                  { id: message._id, state: "Deleted" },
+                  true,
+                  false,
+                );
+              this.props.gtcService.goBack();
+            }}
+            class={"btn"}
+            label={"Delete"}
+            isVisible={this.canReply.map((v) => !v)}
+          />
+          {/* Send */}
+          <GtcTouchButton
+            onPressed={async () => this.optionsItem(this.selectedResponse)}
+            class={"btn"}
+            label={"Send"}
+            isVisible={this.canReply}
+          />
+          {/* Import */}
+          <GtcTouchButton
+            onPressed={async () => {
+              if (this.contactFrequency) {
+                await this.openLoadFreqDialog();
+              } else if (this.directToWaypoint) {
+                await this.openDirectToDialog();
+              }
+            }}
+            class={"btn"}
+            label={"Import"}
+            isVisible={this.canReply.map(
+              (v) =>
+                !v &&
+                (this.contactFrequency !== null ||
+                  this.directToWaypoint !== null),
+            )}
+          />
         </div>
       </div>
     );
@@ -2147,7 +2189,12 @@ class AcarsTabView extends GtcView {
                 ? `FL${String(v.altitudeFeet / 100).padStart(3, "0")}`
                 : `${v.altitudeFeet}FT`;
             },
-            validate: (v) => v !== null && v !== "" && v?.altitudeFeet > 0,
+            validate: (v) =>
+              v !== null &&
+              v !== "" &&
+              !Number.isNaN(
+                Number.parseInt(String(v.altitudeFeet / 100).padStart(3, "0")),
+              ),
             initialValue: null,
           },
           {
@@ -2296,6 +2343,7 @@ class AcarsTabView extends GtcView {
       continuous: false,
       repeat: false,
     });
+
     this.props.gtcService.registerView(
       GtcViewLifecyclePolicy.Transient,
       "ACARS_SETTINGS",
@@ -2356,6 +2404,23 @@ class AcarsTabView extends GtcView {
             controlMode={controlMode}
             items={this.options}
           />
+        );
+      },
+      this.displayPaneIndex,
+    );
+    this.props.gtcService.registerView(
+      GtcViewLifecyclePolicy.Transient,
+      "ACARS_OPTIONS",
+      "MFD",
+      (gtcService, controlMode, displayPaneIndex) => {
+        return (
+          // <AcarsMessageSendList
+          //   gtcService={gtcService}
+          //   displayPaneIndex={displayPaneIndex}
+          //   controlMode={controlMode}
+          //   items={this.options}
+          // />
+          <></>
         );
       },
       this.displayPaneIndex,
@@ -2426,12 +2491,23 @@ class AcarsTabView extends GtcView {
           {this.renderTab(3, this.adscTabLabel, this.renderAdscTab.bind(this))}
         </TabbedContainer>
         <GtcTouchButton
-          class={"acars-page-display-button"}
+          class={"acars-page-display-button2"}
           label={"Create\nMessage"}
           isVisible={true}
           isEnabled={this.canCreate}
           onPressed={() => {
             this.props.gtcService.openPopup("ACARS_MESSAGE_OPT");
+          }}
+        />
+        <GtcTouchButton
+          class={"acars-page-display-button"}
+          label={"Options"}
+          isVisible={true}
+          isEnabled={false}
+          onPressed={() => {
+            // this._activeComponent.map(v => console.log(v));
+            // console.log(this._activeComponent.get(), this._sidebarState, this.context);
+            // this.props.gtcService.openPopup("ACARS_OPTIONS");
           }}
         />
       </div>
