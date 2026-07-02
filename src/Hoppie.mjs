@@ -541,6 +541,11 @@ export const createClient = (
     return handleSuccessfulSend(state, await response.text());
   };
 
+  // Deleting message
+  state.deleteMessage = (id) => {
+    delete state.message_stack[id];
+  };
+
   // we start polling instantly with a normal interval in order to receive messages.
   startPollingIfNeeded(state);
   return state;
