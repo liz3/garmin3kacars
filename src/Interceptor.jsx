@@ -5,7 +5,11 @@ import AcarsTabView, {
   getSettingsManager,
   GtcCpdlcAltitudeDialog,
 } from "./AcarsTabView";
-import { GtcLoadFrequencyDialog, GtcViewKeys, GtcViewLifecyclePolicy } from "@microsoft/msfs-wtg3000-gtc";
+import {
+  GtcLoadFrequencyDialog,
+  GtcViewKeys,
+  GtcViewLifecyclePolicy,
+} from "@microsoft/msfs-wtg3000-gtc";
 import { loadFuelAndBalance } from "./WeightAndBalance.mjs";
 import getAircraftIcao from "./AircraftModels.mjs";
 
@@ -22,7 +26,6 @@ export const onMfdHomePage = (ctor, props, service) => {
 
   return new Proxy({
     children: [
-      rendered,
       <ImgTouchButton
         label={"ATC\nDatalink"}
         imgSrc={"coui://html_ui/garmin-3000-acars/assets/tower.png"}
@@ -31,6 +34,7 @@ export const onMfdHomePage = (ctor, props, service) => {
           service.changePageTo("CPDLC");
         }}
       />,
+      rendered,
     ],
   });
 };
@@ -61,6 +65,26 @@ export const onSetupPageLiv2AirCj3 = (ctor, props, service) => {
     return orig;
   };
   return instance;
+};
+
+export const onAcarsFPLImport = (ctor, props, service) => {
+  if (!window.wtg3000gtc.GtcViewKeys.TextDialog)
+    window.wtg3000gtc.GtcViewKeys.TextDialog = "KeyboardDialog";
+  const rendered = new ctor(props).render();
+
+  return new Proxy({
+    children: [
+      <ImgTouchButton
+        label={"SimBrief"}
+        imgSrc={"https://www.simbrief.com/images/logo_papers.png"}
+        class={"gtc-directory-button"}
+        onPressed={() => {
+          service.changePageTo("SimBrief");
+        }}
+      />,
+      rendered,
+    ],
+  });
 };
 
 class WeightProxy extends DisplayComponent {
