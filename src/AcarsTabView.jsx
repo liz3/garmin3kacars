@@ -965,17 +965,34 @@ class AcarsMessagePage extends GtcView {
       if (segmentIndex !== undefined) break;
     }
 
+    let facility = null;
+    if (segmentIndex === undefined) {
+      try {
+        const lat = SimVar.GetSimVarValue("PLANE LATITUDE", "degrees");
+        const lon = SimVar.GetSimVarValue("PLANE LONGITUDE", "degrees");
+        
+        const results =
+          await this.props.fms.facLoader.findNearestFacilitiesByIdent(
+            FacilitySearchType.AllExceptVisual,
+            waypoint,
+            lat,
+            lon,
+            1,
+          );
+        if (results && results.length > 0) facility = results[0];
+      } catch (error) {
+        console.error("Error searching direct to facility:", error);
+      }
+    }
+
     const directToPage = this.props.gtcService.changePageTo(
       GtcViewKeys.DirectTo,
     );
 
     if (segmentIndex !== undefined) {
-      directToPage.ref.setWaypoint(segmentIndex, segmentLegIndex);
+      directToPage.ref.setWaypoint({ segmentIndex, segmentLegIndex });
     } else {
-      // directToPage.ref.setWaypoint({
-      //   facility: waypoint.facility.get()
-      // });
-      directToPage.ref.setWaypoint();
+      directToPage.ref.setWaypoint(facility ? { facility } : {});
     }
   }
 
