@@ -536,6 +536,14 @@ class CpdlcTab extends DisplayComponent {
   }
 }
 
+// Requested data groups are the same for every ADS-C contract
+const ADSC_REQUEST_DATA_GROUPS = [
+  "Basic ADS",
+  "Earth Reference",
+  "Air Reference",
+  "Airframe ID",
+];
+
 class AdscTab extends DisplayComponent {
   constructor() {
     super(...arguments);
@@ -543,21 +551,127 @@ class AdscTab extends DisplayComponent {
     this.listItemHeight =
       this.props.gtcService.orientation === "horizontal" ? 130 : 70;
 
-    this.oca = [
-      {
-        station: "BIRD",
-        name: "Reykjavik",
-        contract_type: "periodic",
-        report_period: 5 * 60,
+    // List of known OCA stations
+    this.oca = {
+      BIRD: "Reykjavik",
+      ENOB: "Bodo",
+      BGGL: "Nuuk",
+      EGGX: "Shanwick",
+      CZQX: "Gander",
+      KZWY: "New York",
+      LPPO: "Santa Maria",
+      KZAK: "San Francisco",
+      NZZO: "Auckland",
+      NZCM: "McMurdo",
+      NFFF: "Nadi",
+      NTTT: "Tahiti",
+      YBBB: "Brisbane",
+      YMMM: "Melbourne",
+      RJTG: "Tokyo",
+      MMFO: "Mazatlan",
+      PAZN: "Anchorage",
+    };
+
+    this.enabledAdsc = Subject.create(false);
+    this.enabledAdscEmergMode = Subject.create(false);
+    this.adscReportTimer = null;
+    this.activeContracts = ArraySubject.create();
+    this.hasContracts = Subject.create(false);
+
+    this.adscEnabledSub = this.props.gtcService.bus
+      .getSubscriber()
+      .on("acars_adsc_enabled")
+      .handle((e) => {
+        this.enabledAdsc.set(e.enabled);
+        if (window.acarsSide !== "primary") return;
+        const client = this.props.client.get();
+        if (client && client.setAdscEnabled) client.setAdscEnabled(e.enabled);
+        if (e.enabled) {
+          this.startAdscReportLoop();
+        } else {
+          this.stopAdscReportLoop();
+          if (client && client.rejectAdsc) client.rejectAdsc();
+        }
+      });
+
+    this.adscContractsSub = this.props.gtcService.bus
+      .getSubscriber()
+      .on("acars_adsc_contracts")
+      .handle((e) => this.updateContractList(e.contracts));
+
+    this.clientSub = this.props.client.sub((client) => {
+      if (window.acarsSide !== "primary") return;
+      if (!client) {
+        this.publishAdscContracts({});
+        return;
+      }
+      if (client.setAdscEnabled) client.setAdscEnabled(this.enabledAdsc.get());
+      client._adscCallback = (contracts) =>
+        this.publishAdscContracts(contracts);
+      this.publishAdscContracts(client.adsc_contracts);
+    }, true);
+  }
+
+  publishAdscEnabled(enabled) {
+    this.props.gtcService.bus
+      .getPublisher()
+      .pub("acars_adsc_enabled", { enabled }, true, true);
+  }
+
+  publishAdscContracts(contracts) {
+    this.props.gtcService.bus
+      .getPublisher()
+      .pub("acars_adsc_contracts", { contracts: contracts || {} }, true, true);
+  }
+
+  updateContractList(contracts) {
+    const items = Object.keys(contracts || {}).map((station) => {
+      const contract = contracts[station];
+      return {
+        station,
+        name: this.oca[station] ?? station ?? "ZZZZ",
+        contract_type: contract.type,
+        report_period: contract.interval,
         next_report: null,
-        request_data_group: [
-          "Basic ADS",
-          "Earth Reference",
-          "Air Reference",
-          "Airframe ID",
-        ],
-      },
-    ];
+        request_data_group: ADSC_REQUEST_DATA_GROUPS,
+        lastReportTime: contract.lastReportTime,
+      };
+    });
+    this.activeContracts.set(items);
+    this.hasContracts.set(items.length > 0);
+  }
+
+  startAdscReportLoop() {
+    if (this.adscReportTimer) return;
+    this.adscReportTimer = setInterval(() => this.sendDueAdscReports(), 1000);
+  }
+
+  stopAdscReportLoop() {
+    if (this.adscReportTimer) {
+      clearInterval(this.adscReportTimer);
+      this.adscReportTimer = null;
+    }
+  }
+
+  sendDueAdscReports() {
+    const client = this.props.client.get();
+    if (!this.enabledAdsc.get() || !client || !client.adsc_contracts) return;
+    const now = Date.now();
+    let sent = false;
+    for (const station of Object.keys(client.adsc_contracts)) {
+      const contract = client.adsc_contracts[station];
+      if (contract.type !== "periodic") continue;
+      if (
+        contract.lastReportTime === null ||
+        now - contract.lastReportTime >= contract.interval * 1000
+      ) {
+        contract.lastReportTime = now;
+        this.adscContract(station);
+        sent = true;
+      }
+    }
+    // Broadcast updated lastReportTime so "Next Report" stays accurate
+    if (sent) this.publishAdscContracts(client.adsc_contracts);
   }
 
   onResume() {
@@ -578,6 +692,14 @@ class AdscTab extends DisplayComponent {
     return false;
   }
   stateBtnPressed() {}
+
+  destroy() {
+    this.stopAdscReportLoop();
+    if (this.adscEnabledSub) this.adscEnabledSub.destroy();
+    if (this.adscContractsSub) this.adscContractsSub.destroy();
+    if (this.clientSub) this.clientSub.destroy();
+    super.destroy();
+  }
 
   async openEmergDialog() {
     const result = await this.props.gtcService
@@ -606,13 +728,13 @@ class AdscTab extends DisplayComponent {
 
     if (result.wasCancelled || result.payload !== true) return;
 
-    this.enabledAdsc.set(false);
+    this.publishAdscEnabled(false);
   }
 
-  adscContract(station) {
+  async adscContract(station) {
     try {
       const client = this.props.client.get();
-      if (!client) return;
+      if (!client) return false;
 
       const latRad = SimVar.GetSimVarValue("PLANE LATITUDE", "radians");
       const lonRad = SimVar.GetSimVarValue("PLANE LONGITUDE", "radians");
@@ -630,52 +752,40 @@ class AdscTab extends DisplayComponent {
         (((headingMagRad * (180 / Math.PI)) % 360) + 360) % 360,
       );
 
-      const response = client.sendAdsc(station, lat, lon, alt, hdg, gs);
-      console.log(response);
-    } catch (error) {
-      console.error("Error sending ADS-C report:", error);
+      return await client.sendAdsc(station, lat, lon, alt, hdg, gs);
+    } catch {
+      return false;
     }
   }
 
-  renderItem(items) {
-    const sidebarState = Subject.create(null);
-
-    if (items.length === 0) {
-      return <span class="empty-message">No Active Connections</span>;
-    }
-
+  renderContractItem(contract) {
     return (
-      <GtcList
-        class={"acars-adsc-items"}
-        ref={this.listRef}
-        listItemSpacingPx={1}
-        sidebarState={sidebarState}
-        bus={this.bus}
-        itemsPerPage={4}
-        listItemHeightPx={this.listItemHeight}
-      >
-        {items.map((e) => (
-          <GtcListItem hideBorder key={e.title}>
-            <GtcTouchButton
-              class={"acars-settings-button"}
-              label={`Connection with ${e.station}`}
-              isInList={true}
-              onPressed={() => {
-                this.props.gtcService
-                  .openPopup("ADSC_CONTRACT", "normal", "hide")
-                  .ref.openForm(e);
-              }}
-            />
-          </GtcListItem>
-        ))}
-      </GtcList>
+      <GtcListItem hideBorder>
+        <GtcTouchButton
+          class={"acars-settings-button"}
+          label={`Connection with ${contract.station}`}
+          isInList={true}
+          onPressed={() => {
+            // Compute "Next Report" at open time so it is always current
+            const item = { ...contract };
+            if (item.report_period != null) {
+              const elapsed =
+                item.lastReportTime != null
+                  ? (Date.now() - item.lastReportTime) / 1000
+                  : item.report_period;
+              item.next_report = Math.max(0, item.report_period - elapsed);
+            }
+            this.props.gtcService
+              .openPopup("ADSC_CONTRACT", "normal", "hide")
+              .ref.openForm(item);
+          }}
+        />
+      </GtcListItem>
     );
   }
 
   render() {
-    this.enabledAdsc = Subject.create(false);
-    this.enabledAdscEmergMode = Subject.create(false);
-
+    const sidebarState = Subject.create(null);
     return (
       <div class="acars-page-adsc-tab">
         <div class="top-row">
@@ -687,8 +797,7 @@ class AdscTab extends DisplayComponent {
               if (this.enabledAdsc.get()) {
                 this.disableAdsc();
               } else {
-                this.enabledAdsc.set(!this.enabledAdsc.get());
-                // this.adscContract("TEST"); NEED TO BE REWORK FOR PERIODIC ADSC CONTRACTS
+                this.publishAdscEnabled(true);
               }
             }}
             isInList
@@ -711,7 +820,27 @@ class AdscTab extends DisplayComponent {
           />
         </div>
 
-        <div class="main-panel">{this.renderItem(this.oca)}</div>
+        <div class="main-panel">
+          <span
+            class="empty-message"
+            style={{
+              display: this.hasContracts.map((e) => (e ? "none" : "block")),
+            }}
+          >
+            No Active Connections
+          </span>
+          <GtcList
+            class={"acars-adsc-items"}
+            ref={this.listRef}
+            listItemSpacingPx={1}
+            sidebarState={sidebarState}
+            bus={this.bus}
+            data={this.activeContracts}
+            renderItem={this.renderContractItem.bind(this)}
+            itemsPerPage={4}
+            listItemHeightPx={this.listItemHeight}
+          />
+        </div>
       </div>
     );
   }
@@ -843,6 +972,9 @@ class AcarsMessagePage extends GtcView {
     if (segmentIndex !== undefined) {
       directToPage.ref.setWaypoint(segmentIndex, segmentLegIndex);
     } else {
+      // directToPage.ref.setWaypoint({
+      //   facility: waypoint.facility.get()
+      // });
       directToPage.ref.setWaypoint();
     }
   }
@@ -2344,6 +2476,54 @@ class AcarsTabView extends GtcView {
       repeat: false,
     });
 
+    setTimeout(() => {
+      const mockMessage = {
+        _id: 9999,
+        from: "LFFF",
+        type: "cpdlc",
+        content: "CONTACT PARIS CONTROL ON 131.350",
+        ts: Date.now(),
+        viewed: false,
+        respondSend: null,
+        options: ["WILCO", "UNABLE", "STANDBY"],
+        cpdlc: {
+          protocol: "data2",
+          min: "1",
+          mrn: "",
+          ra: "WU",
+          content: "CONTACT PARIS CONTROL ON 131.350",
+        },
+        response: async (code) => {
+          console.log("[MOCK] Response sent:", code);
+        },
+      };
+
+      this.onMessage(mockMessage);
+    }, 4000);
+    setTimeout(() => {
+      const mockMessage = {
+        _id: 9999,
+        from: "LFPG",
+        type: "cpdlc",
+        content: "PROCEED DIRECT TO ODILO",
+        ts: Date.now(),
+        viewed: false,
+        respondSend: null,
+        options: ["WILCO", "UNABLE", "STANDBY"],
+        cpdlc: {
+          protocol: "data2",
+          min: "1",
+          mrn: "",
+          ra: "WU",
+          content: "PROCEED DIRECT TO MTG",
+        },
+        response: async (code) => {
+          console.log("[MOCK] Response sent:", code);
+        },
+      };
+
+      this.onMessage(mockMessage);
+    }, 1000);
     this.props.gtcService.registerView(
       GtcViewLifecyclePolicy.Transient,
       "ACARS_SETTINGS",
