@@ -8,7 +8,8 @@ import {
   onSetupPage,
   onWeightPage,
   registerViews,
-  onSetupPageLiv2AirCj3
+  onSetupPageLiv2AirCj3,
+  onAcarsFPLImport,
 } from "./Interceptor";
 import "./acars-style.css";
 
@@ -28,7 +29,7 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
     const title = SimVar.GetSimVarValue("TITLE", "string");
     if (title.includes("CJ3+"))
       this.onComponentCreating = (ctor, props) => {
-      if (ctor.name === "GtcWeightFuelPage") {
+        if (ctor.name === "GtcWeightFuelPage") {
           this.weightFuelInstance = new ctor(props);
           return this.weightFuelInstance;
         }
@@ -43,7 +44,7 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
             this.weightFuelInstance,
           );
         }
-       if (ctor.name === "CustomGtcUtilitiesPage") {
+        if (ctor.name === "CustomGtcUtilitiesPage") {
           return onSetupPageLiv2AirCj3(
             ctor,
             props,
@@ -64,8 +65,8 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
         }
         if (
           ctor.name === "GtcTouchButton" &&
-          props.label === "Set Empty\nWeight"
-          && !title.includes("Phenom 300E")
+          props.label === "Set Empty\nWeight" &&
+          !title.includes("Phenom 300E")
         ) {
           return onWeightPage(
             ctor,
@@ -74,9 +75,17 @@ class GarminAcarsPlugin extends AbstractG3000GtcPlugin {
             this.weightFuelInstance,
           );
         }
-        if ( ctor.name === "GtcImgTouchButton" &&
-          props.label === "Crew Profile") {
+        if (
+          ctor.name === "ImgTouchButton" &&
+          (props.label === "PERF" || props.label === "Speed Bugs")
+        ) {
           return onMfdHomePage(ctor, props, this.binder.gtcService);
+        }
+        if (
+          ctor.name === "GtcImgTouchButton" &&
+          props.label === "Crew Profile"
+        ) {
+          return onAcarsFPLImport(ctor, props, this.binder.gtcService);
         }
         if (ctor.name === "GtcSetupPage") {
           return onSetupPage(ctor, props, this.binder.gtcService);

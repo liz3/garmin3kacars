@@ -33,9 +33,9 @@
   --acars-page-tab-container-width: 470px;
   --acars-page-tab-container-height: 380px;
   --acars-page-display-page-status-tab-padding: 12px 15px 17px 9px;
-  --acars-page-display-button-right-margin: 12px;
-  --acars-page-display-button-width: 80px;
-  --acars-page-display-button-height: 85px;
+  --acars-page-display-button-right-margin: 3px;
+  --acars-page-display-button-width: 95px;
+  --acars-page-display-button-height: 70px;
   --acars-page-display-page-status-tab-padding: 25px 30px 35px 18px;
 }
 
@@ -122,26 +122,73 @@
   width: 100%;
   height: 100%;
 }
-.acars-page-cpdlc-tab .message-item {
+.gtc-horizontal .acars-page-cpdlc-tab .message-item {
   width: 100%;
   height: 100%;
   font-size: 26px;
+  padding: 15px;
 }
-.acars-page-cpdlc-tab .message-item .status-row {
+.gtc-vertical .acars-page-cpdlc-tab .message-item {
+  width: 100%;
+  height: 100%;
+  font-size: 18px;
+  padding: 8px;
+}
+
+.gtc-vertical .acars-page-cpdlc-tab .message-list-item {
+  padding: 5px 5px 0 5px;
+}
+
+.acars-page-cpdlc-tab .message-item.unread-effect {
+  border: 1.5px solid #00b4d8;
+  border-radius: 4px;
+
+  background:
+    linear-gradient(to bottom, rgba(0, 180, 220, 0.8) 0px, transparent 30px)
+      top / 100% 100% no-repeat,
+    linear-gradient(to top, rgba(0, 180, 220, 0.8) 0px, transparent 30px)
+      bottom / 100% 100% no-repeat,
+    linear-gradient(to right, rgba(0, 180, 220, 0.8) 0px, transparent 30px)
+      left / 100% 100% no-repeat,
+    linear-gradient(to left, rgba(0, 180, 220, 0.8) 0px, transparent 30px)
+      right / 100% 100% no-repeat,
+    #07121c;
+}
+
+.gtc-horizontal .acars-page-cpdlc-tab .message-item .status-row {
   padding: 4px 8px;
   display: flex;
   justify-content: space-between;
   height: 15%;
   font-size: var(--acars-cpdlc-tab-message-status-font-size);
 }
-.acars-page-cpdlc-tab .message-item .status-row .strong {
-  font-weight: bold;
+.gtc-vertical .acars-page-cpdlc-tab .message-item .status-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--acars-cpdlc-tab-message-status-font-size);
 }
+
 .acars-page-cpdlc-tab .message-item .text-block {
   font-size: var(--acars-cpdlc-tab-message-font-size);
   height: 80%;
-  padding: 12px 8px;
-  font-weight: bold;
+  padding: 12px 5px;
+}
+.acars-page-cpdlc-tab .message-item .state-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.gtc-horizontal .acars-page-cpdlc-tab .message-item .cpdlc-state-icon {
+  width: 98px;
+  height: 53px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.gtc-vertical .acars-page-cpdlc-tab .message-item .cpdlc-state-icon {
+  height: 26.5px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 .acars-settings {
   position: absolute;
@@ -177,7 +224,8 @@
 
 .gtc-horizontal .acars-settings {
   --acars-settings-top: 45px;
-  --acars-settings-width: 445px;
+  /* --acars-settings-width: 445px; */
+  --acars-settings-width: 800px;
   --acars-settings-height: 715px;
 
   --acars-settings-button-icon-width: 100px;
@@ -195,7 +243,8 @@
 
 .gtc-vertical .acars-settings {
   --acars-settings-top: 23px;
-  --acars-settings-width: 290px;
+  /* --acars-settings-width: 290px; */
+  --acars-settings-width: 445px;
   --acars-settings-height: 385px;
 
   --acars-settings-button-icon-width: 50px;
@@ -226,11 +275,16 @@
   flex-flow: column nowrap;
   justify-content: center;
   align-items: center;
+  padding: 15px;
 }
 .acars-message-dialog-popup {
   background: var(--gtc-black-background-gradient);
   border: var(--gtc-black-background-border);
   border-radius: var(--gtc-popup-border-radius);
+  left: calc(50% - var(--acars-message-popup-width) / 2);
+  top: var(--acars-message-popup-top);
+  width: var(--acars-message-popup-width);
+  height: var(--acars-message-popup-height);
 }
 
 .acars-message-dialog .header {
@@ -243,6 +297,9 @@
 .acars-message-dialog .list {
   width: 100%;
   height: 75%;
+  background: var(--gtc-black-background-gradient);
+  border: var(--gtc-black-background-border);
+  border-radius: var(--gtc-popup-border-radius);
 }
 .acars-message-dialog .item {
   width: 100%;
@@ -250,18 +307,29 @@
 }
 .acars-message-dialog .footer {
   width: 100%;
-  height: 15%;
   display: flex;
-  padding: 6px;
-  justify-content: center;
+  flex-direction: column;
+  padding: 15px 15px;
+  gap: 4px;
+}
+.acars-message-dialog .footer .status-row {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--wt-color-white);
+  font-size: 25px;
+  padding-bottom: 40px;
 }
 .acars-message-dialog .footer .touch-button {
-  width: 95%;
+  align-self: center;
+  width: 25%;
   font-size: 26px;
+  height: 110px;
 }
 .gtc-horizontal .acars-message-dialog {
   --acars-message-popup-top: 45px;
-  --acars-message-popup-width: 650px;
+  --acars-message-popup-width: 800px;
   --acars-message-popup-height: 715px;
 
   --acars-message-popup-button-icon-width: 100px;
@@ -279,7 +347,7 @@
 
 .gtc-vertical .acars-message-dialog {
   --acars-message-popup-top: 23px;
-  --acars-message-popup-width: 320px;
+  --acars-message-popup-width: 445px;
   --acars-message-popup-height: 385px;
 
   --acars-message-popup-button-icon-width: 50px;
@@ -297,7 +365,6 @@
 
 .acars-message-page {
   position: absolute;
-  left: calc(50% - var(--acars-message-page-width) / 2);
   top: var(--acars-message-page-top);
   width: var(--acars-message-page-width);
   height: var(--acars-message-page-height);
@@ -308,29 +375,82 @@
   background: var(--gtc-black-background-gradient);
   border: var(--gtc-black-background-border);
   border-radius: var(--gtc-popup-border-radius);
+  overflow: hidden;
 }
 
 .acars-message-page .content-list {
   width: 100%;
-  height: calc(100% - var(--acars-message-page-btn-row-height) - 80px);
+  border: white 2px solid;
+  margin: 2px;
+  border-radius: var(--gtc-popup-border-radius);
+  /* height: calc(100% - var(--acars-message-page-btn-row-height) - 80px); */
+  height: 100%;
 }
 .acars-message-page .content-list .content {
-  width: 100%;
+  width: 90%;
   padding: 12px;
-  border: var(--gtc-black-background-border);
+  /* border: var(--gtc-black-background-border); */
   font-size: var(--acars-message-page-content-font-size);
   text-wrap: wrap;
 }
-.acars-message-page .header {
+
+.acars-message-page .content-list .content-from {
+  border-width: 2px 2px 2px 0;
+  border-style: solid solid solid none;
+  border-color: #0092bf;
+  border-radius: 0 23px 23px 0;
+}
+
+.acars-message-page .content-list .content-to {
+  border-width: 2px 2px 2px 0;
+  border-style: solid solid solid none;
+  border-color: #0092bf;
+  border-radius: 0 23px 23px 0;
+}
+
+.answer-wrapper {
+  display: flex;
+  width: 100%;
+  height: 90px;
+  align-items: center;
+  padding: 4px 8px;
+}
+
+.answer {
+  width: 55%;
+  margin-left: auto;
+  height: var(--acars-message-page-btn-row-height);
+  min-height: var(--acars-message-page-btn-row-height);
+  height: 80px;
+  font-size: var(--acars-message-page-btn-font-size);
+}
+
+.gtc-horizontal .strong {
+  font-size: 25px;
+}
+.gtc-horizontal .small {
+  font-size: 18px;
+}
+
+.gtc-vertical .strong {
+  font-size: 18px;
+}
+
+.gtc-vertical .small {
+  font-size: 12px;
+}
+
+/* .acars-message-page .header {
   width: 100%;
   padding: 12px;
   text-align: center;
   font-size: var(--acars-message-page-header-font-size);
   margin-bottom: 8px;
-}
+} */
 .acars-message-page .options {
   width: 100%;
   height: var(--acars-message-page-btn-row-height);
+  padding-bottom: 15px;
   display: flex;
   justify-content: center;
 }
@@ -344,7 +464,7 @@
 
 .gtc-horizontal .acars-message-page {
   --acars-message-page-top: 45px;
-  --acars-message-page-width: 700px;
+  --acars-message-page-width: 850px;
   --acars-message-page-height: 715px;
 
   --acars-message-page-button-icon-width: 100px;
@@ -367,7 +487,7 @@
 
 .gtc-vertical .acars-message-page {
   --acars-message-page-top: 23px;
-  --acars-message-page-width: 350px;
+  --acars-message-page-width: 455px;
   --acars-message-page-height: 385px;
 
   --acars-message-page-button-icon-width: 50px;
@@ -385,7 +505,7 @@
   --acars-message-page-header-font-size: 26px;
   --acars-message-page-content-font-size: 20px;
   --acars-message-page-btn-font-size: 15px;
-  --acars-message-page-btn-row-height: 15%;
+  --acars-message-page-btn-row-height: 25%;
 }
 
 .gtc-horizontal .acars-page-status-tab {
@@ -521,9 +641,14 @@
 .acars-status-page-tab-right .border-btm {
   border-bottom: var(--gtc-black-background-border);
 }
-.acars-status-page-tab-right .state-btn {
+.gtc-horizontal .acars-status-page-tab-right .state-btn {
   width: 180px;
   height: 90px;
+}
+
+.gtc-vertical .acars-status-page-tab-right .state-btn {
+  width: 120px;
+  height: 60px;
 }
 
 .acars-status-page-tab-right .icons-list {
@@ -572,4 +697,201 @@
 
 .acars-status-page-tab-left-button .touch-button-value-value {
   font-size: 1.3em;
+}
+
+.acars-page-adsc-tab {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  padding: var(--acars-adsc-tab-padding);
+  display: flex;
+  flex-direction: column;
+}
+
+.gtc-horizontal .acars-page-adsc-tab {
+  --acars-adsc-tab-padding: 18px 18px 16px 18px;
+  --acars-adsc-tab-top-row-height: 74px;
+  --acars-adsc-tab-top-gap: 8px;
+  --acars-adsc-tab-title-font-size: 22px;
+  --acars-adsc-tab-message-font-size: 30px;
+  --acars-adsc-tab-panel-radius: 8px;
+  --acars-adsc-tab-panel-border: 2px;
+}
+
+.gtc-vertical .acars-page-adsc-tab {
+  --acars-adsc-tab-padding: 8px 8px 8px 8px;
+  --acars-adsc-tab-top-row-height: 68px;
+  --acars-adsc-tab-top-gap: 10px;
+  --acars-adsc-tab-title-font-size: 13px;
+  --acars-adsc-tab-message-font-size: 18px;
+  --acars-adsc-tab-panel-radius: 4px;
+  --acars-adsc-tab-panel-border: 1px;
+}
+
+.acars-page-adsc-tab .top-row {
+  display: flex;
+  gap: var(--acars-adsc-tab-top-gap);
+  height: var(--acars-adsc-tab-top-row-height);
+  margin-bottom: var(--acars-adsc-tab-top-gap);
+}
+
+.acars-page-adsc-tab .top-row .left-col,
+.acars-page-adsc-tab .top-row .right-col {
+  flex: 1;
+  border: var(--acars-adsc-tab-panel-border) solid rgba(255, 255, 255, 0.75);
+  border-radius: var(--acars-adsc-tab-panel-radius);
+}
+
+.acars-page-adsc-tab .top-row .left-col .touch-button-label,
+.acars-page-adsc-tab .top-row .right-col .touch-button-label {
+  font-size: var(--acars-adsc-tab-title-font-size);
+  font-weight: 600;
+}
+
+.acars-page-adsc-tab .main-panel {
+  flex: 1;
+  border: calc(var(--acars-adsc-tab-panel-border) + 1px) solid #8fc7dc;
+  border-radius: var(--acars-adsc-tab-panel-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.acars-page-adsc-tab .empty-message {
+  color: white;
+  font-size: var(--acars-adsc-tab-message-font-size);
+  font-weight: 600;
+}
+
+.acars-adsc-items {
+  position: absolute;
+  left: calc(50% - var(--acars-settings-width) / 2);
+  top: var(--acars-settings-top);
+  width: 350px;
+  height: var(--acars-settings-height);
+  display: flex;
+  flex-flow: column nowrap;
+  justify-content: center;
+  align-items: center;
+  background: var(--gtc-black-background-gradient);
+  border: var(--gtc-black-background-border);
+  border-radius: var(--gtc-popup-border-radius);
+  font-size: 20px;
+}
+
+.acars-adsc-contract-page {
+  position: absolute;
+  left: calc(50% - var(--acars-adsc-contract-width) / 2);
+  top: var(--acars-adsc-contract-top);
+  width: var(--acars-adsc-contract-width);
+  height: var(--acars-adsc-contract-height);
+  display: flex;
+  flex-direction: column;
+  background: var(--gtc-black-background-gradient);
+  border: var(--gtc-black-background-border);
+  border-radius: var(--gtc-popup-border-radius);
+  color: var(--g3000-color-white);
+  padding: var(--acars-adsc-contract-padding);
+  gap: 0;
+  overflow: hidden;
+}
+
+.gtc-horizontal .acars-adsc-contract-page {
+  --acars-adsc-contract-top: 45px;
+  --acars-adsc-contract-width: 800px;
+  --acars-adsc-contract-height: 715px;
+  --acars-adsc-contract-padding: 20px 24px;
+  --acars-adsc-contract-row-gap: 10px;
+  --acars-adsc-contract-label-font-size: 24px;
+  --acars-adsc-contract-value-font-size: 28px;
+  --acars-adsc-contract-value-big-font-size: 38px;
+  --acars-adsc-contract-value-small-font-size: 10px;
+  --acars-adsc-contract-mode-title-font-size: 30px;
+  --acars-adsc-contract-divider-height: 2px;
+  --acars-adsc-contract-row-min-height: 70px;
+}
+
+.gtc-vertical .acars-adsc-contract-page {
+  --acars-adsc-contract-top: 23px;
+  --acars-adsc-contract-width: 475px;
+  --acars-adsc-contract-height: 385px;
+  --acars-adsc-contract-padding: 10px 14px;
+  --acars-adsc-contract-row-gap: 5px;
+  --acars-adsc-contract-label-font-size: 14px;
+  --acars-adsc-contract-value-font-size: 17px;
+  --acars-adsc-contract-value-big-font-size: 22px;
+  --acars-adsc-contract-value-small-font-size: 13px;
+  --acars-adsc-contract-mode-title-font-size: 18px;
+  --acars-adsc-contract-divider-height: 1px;
+  --acars-adsc-contract-row-min-height: 40px;
+}
+
+.adsc-contract-mode-title {
+  width: 100%;
+  text-align: center;
+  font-size: var(--acars-adsc-contract-mode-title-font-size);
+  font-weight: 600;
+  color: var(--g3000-color-white);
+  padding-bottom: var(--acars-adsc-contract-row-gap);
+  border-bottom: var(--acars-adsc-contract-divider-height) solid white;
+  margin-bottom: var(--acars-adsc-contract-row-gap);
+  flex-shrink: 0;
+}
+
+.adsc-contract-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--acars-adsc-contract-row-min-height);
+  border-bottom: var(--acars-adsc-contract-divider-height) solid white;
+  padding: 4px 0;
+  flex: 1;
+  flex-shrink: 0;
+}
+
+.adsc-contract-row.adsc-contract-row-multiline {
+  align-items: center;
+  padding: 6px 0;
+}
+
+.adsc-contract-label {
+  /* font-size: var(--acars-adsc-contract-label-font-size); */
+  white-space: pre-line;
+  font-size: var(--acars-adsc-contract-mode-title-font-size);
+  flex: 0 0 45%;
+  line-height: 1.3;
+}
+
+.adsc-contract-value {
+  font-size: var(--acars-adsc-contract-value-font-size);
+  color: var(--g3000-color-white);
+  /* text-align: center; */
+  flex: 1;
+  line-height: 1.3;
+}
+
+.adsc-contract-value-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* justify-content: center; */
+  flex: 1;
+  gap: 2px;
+}
+
+.adsc-contract-value-big {
+  font-size: var(--acars-adsc-contract-value-big-font-size);
+  font-weight: 600;
+}
+
+.adsc-contract-value-small {
+  font-size: var(--acars-adsc-contract-value-small-font-size);
+}
+
+.uppercase {
+  text-transform: uppercase;
 }

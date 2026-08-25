@@ -4,8 +4,10 @@ import { join } from "path";
 
 const isWatch = process.argv.includes("--watch") || process.argv.includes("-w");
 
-const DEST_DIR = "./g3000-acars/PackageSources/Copys/garmin-3000-acars/plugin/garmin-3000-acars";
-const PLUGINS_DIR = "./g3000-acars/PackageSources/Copys/garmin-3000-acars/plugin/Plugins";
+const DEST_DIR =
+  "./g3000-acars/PackageSources/Copys/garmin-3000-acars/plugin/garmin-3000-acars";
+const PLUGINS_DIR =
+  "./g3000-acars/PackageSources/Copys/garmin-3000-acars/plugin/Plugins";
 
 // Copy assets and CSS to destination
 function copyStaticFiles() {
@@ -35,7 +37,7 @@ const ctx = await esbuild.context({
   bundle: true,
   minify: false,
   sourcemap: false,
-  target: ["es2020"],
+  target: ["es2019"],
   format: "iife",
   banner: {
     js: `

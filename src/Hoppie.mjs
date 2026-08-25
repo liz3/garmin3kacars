@@ -44,8 +44,7 @@ const sendAcarsMessage = async (state, receiver, payload, messageType) => {
     ["to", receiver],
     ["packet", payload],
   ]);
-  if(state.code)
-    params.append("logon", state.code);
+  if (state.code) params.append("logon", state.code);
   return fetch(`${state._service_url}?${params.toString()}`, {
     method: "GET",
   });
@@ -70,6 +69,10 @@ const forwardStateUpdate = (state) => {
       active: state.active_station,
       pending: state.pending_station,
     });
+};
+
+const forwardAdscUpdate = (state) => {
+  if (state._adscCallback) state._adscCallback(state.adsc_contracts);
 };
 
 export const messageStateUpdate = (state, message) => {
@@ -160,42 +163,77 @@ const poll = (state) => {
                 ) {
                   continue;
                 }
-                if (
-                  state.active_station &&
-                  message.from === state.active_station &&
-                  message.content.startsWith("HANDOVER")
-                ) {
-                  state.active_station = null;
-                  const station = message.content.split(" ")[1];
-                  if (station) {
-                    const corrected = station.trim().replace("@", "");
-                    state.sendLogonRequest(corrected);
+
+                if (message.type === "ads-c") {
+                  const periodicMessageMatch = message.content.match(
+                    /^REQUEST PERIODIC (\d+)$/,
+                  );
+                  const requestCancelMatch =
+                    message.content.match(/^REQUEST CANCEL$/);
+
+                  if (periodicMessageMatch) {
+                    // ADS-C disabled: reject the contract request from this station
+                    if (!state.adsc_enabled) {
+                      sendAcarsMessage(state, message.from, "REJECT", "ads-c");
+                      continue;
+                    }
+
+                    const intervalSeconds = parseInt(
+                      periodicMessageMatch[1],
+                      10,
+                    );
+
+                    state.adsc_contracts[message.from] = {
+                      type: "periodic",
+                      interval: intervalSeconds,
+                      lastReportTime: null,
+                    };
+                    forwardAdscUpdate(state);
+
+                    continue;
+                  } else if (requestCancelMatch) {
+                    delete state.adsc_contracts[message.from];
+                    forwardAdscUpdate(state);
                     continue;
                   }
+                } else {
+                  if (
+                    state.active_station &&
+                    message.from === state.active_station &&
+                    message.content.startsWith("HANDOVER")
+                  ) {
+                    state.active_station = null;
+                    const station = message.content.split(" ")[1];
+                    if (station) {
+                      const corrected = station.trim().replace("@", "");
+                      state.sendLogonRequest(corrected);
+                      continue;
+                    }
+                  }
+                  message._id = state.idc++;
+                  messageStateUpdate(state, message);
+                  if (message.type === "cpdlc" && message.cpdlc.ra) {
+                    const opts = responseOptions(message.cpdlc.ra);
+                    if (opts)
+                      message.response = async (code) => {
+                        message.respondSend = code;
+                        if (state._min_count === 63) {
+                          state._min_count = 0;
+                        }
+                        state._min_count++;
+                        sendAcarsMessage(
+                          state,
+                          message.from,
+                          `/data2/${state._min_count}/${message.cpdlc.min}/${code === "STANDBY" ? "NE" : "N"}/${code}`,
+                          "cpdlc",
+                        );
+                      };
+                    message.options = opts;
+                    message.respondSend = null;
+                  }
+                  state.message_stack[message._id] = message;
+                  state._callback(message);
                 }
-                message._id = state.idc++;
-                messageStateUpdate(state, message);
-                if (message.type === "cpdlc" && message.cpdlc.ra) {
-                  const opts = responseOptions(message.cpdlc.ra);
-                  if (opts)
-                    message.response = async (code) => {
-                      message.respondSend = code;
-                      if (state._min_count === 63) {
-                        state._min_count = 0;
-                      }
-                      state._min_count++;
-                      sendAcarsMessage(
-                        state,
-                        message.from,
-                        `/data2/${state._min_count}/${message.cpdlc.min}/${code === "STANDBY" ? "NE" : "N"}/${code}`,
-                        "cpdlc",
-                      );
-                    };
-                  message.options = opts;
-                  message.respondSend = null;
-                }
-                state.message_stack[message._id] = message;
-                state._callback(message);
               }
               poll(state);
             })
@@ -233,6 +271,16 @@ export const convertUnixToHHMM = (unixTimestamp) => {
 
   return `${hours}:${minutes}`;
 };
+
+function convertUnixToADSC(unixTimestamp) {
+  const date = new Date(unixTimestamp);
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const hh = date.getUTCHours();
+  const mm = String(date.getUTCMinutes()).padStart(2, "0");
+
+  if (hh === 0) return `${dd}${mm}`;
+  return `${dd}${String(hh).padStart(2, "0")}${mm}`;
+}
 
 const SERVICES = {
   hoppie: "https://www.hoppie.nl/acars/system/connect.html",
@@ -303,6 +351,9 @@ export const createClient = (
     aircraft: aicraftType,
     idc: 0,
     message_stack: {},
+    adsc_contracts: {},
+    adsc_enabled: false,
+    _adscCallback: null,
     _service_url: SERVICES[service],
     _expectingResponse: null,
     _pollingStarted: false,
@@ -504,6 +555,90 @@ export const createClient = (
     );
     if (!response.ok) return false;
     return handleSuccessfulSend(state, await response.text());
+  };
+
+  // Real ADS-C message example for reference (if one day we want to implement full ADS-C support as hoppie does):
+  //  ADS-C message:
+  //     Basic report:
+  //      Lat: 44.0103722
+  //      Lon: 151.3818169
+  //      Alt: 34000 ft
+  //      Time: 588.000 sec past hour (:09:48.000)
+  //      NAV unit redundancy: OK
+  //      TCAS: OK
+  //     Fixed projection:
+  //      Lat: 47.3472977
+  //      Lon: 156.8375587
+  //      Alt: 34000 ft
+  //      ETA: 2215 sec
+  //     Predicted route:
+  //      Next waypoint:
+  //       Lat: 45.5307770
+  //       Lon: 153.7198448
+  //       Alt: 34000 ft
+  //       ETA: 992 sec
+  //      Next+1 waypoint:
+  //       Lat: 48.9949036
+  //       Lon: 160.0115776
+  //       Alt: 34000 ft
+  //     Earth reference data:
+  //      True track: 46.8 deg
+  //      Ground speed: 488.0 kt
+  //      Vertical speed: 96 ft/min
+  //     Air reference data:
+  //      True heading: 42.9 deg
+  //      Mach speed: 0.8380
+  //      Vertical speed: 96 ft/min
+  // REPORT QFA3 000948 44.0103722 151.3818169 34000 FIXED 2215 47.3472977 156.8375587 34000 NEXT 0992 45.5307770 153.7198448 34000 NEXT+1 48.9949036 160.0115776 34000 EARTH 46.8 488.0 96 AIR 42.9 0.8380 96 NAV OK TCAS OK
+
+  state.setAdscEnabled = (enabled) => {
+    state.adsc_enabled = !!enabled;
+  };
+
+  // possible request from atc : REQUEST PERIODIC 120 (report every 120 seconds)
+  // 18-23:36Z		  	REPORT FKYTR 182336 43.50315 5.37149 369 322 0
+  state.sendAdsc = async (station, lat, lon, alt, hdg, gs) => {
+    const response = await sendAcarsMessage(
+      state,
+      station ?? state.active_station,
+      `REPORT ${state.callsign} ${convertUnixToADSC(Date.now())} ${lat} ${lon} ${alt} ${hdg} ${gs}`,
+      "ads-c",
+    );
+
+    if (!response.ok) return false;
+    return handleSuccessfulSend(state, await response.text());
+  };
+
+  state.rejectAdsc = async (station) => {
+    const contracts = state.adsc_contracts;
+    if (!contracts || Object.keys(contracts).length === 0) return false;
+    if (station && !contracts[station]) return false;
+
+    const keysToReject = station ? [station] : Object.keys(contracts);
+
+    let allOk = true;
+
+    for (const key of keysToReject) {
+      // The contract is terminated locally even if the reject notification fails; no response is expected, so fast polling is not activated.
+      try {
+        const response = await sendAcarsMessage(state, key, "REJECT", "ads-c");
+        if (!response.ok || !(await response.text()).startsWith("ok"))
+          allOk = false;
+      } catch (err) {
+        allOk = false;
+      }
+
+      delete contracts[key];
+    }
+
+    forwardAdscUpdate(state);
+
+    return allOk;
+  };
+
+  // Deleting message
+  state.deleteMessage = (id) => {
+    delete state.message_stack[id];
   };
 
   // we start polling instantly with a normal interval in order to receive messages.
